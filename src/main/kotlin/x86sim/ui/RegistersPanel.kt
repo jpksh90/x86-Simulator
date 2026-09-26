@@ -78,15 +78,15 @@ class RegistersPanel(private val machine: Machine) : JPanel(BorderLayout()) {
         .joinToString("") { if (it in 32..126) it.toChar().toString() else "·" }
 
     private val table = JTable(tableModel).apply {
-        font = Theme.mono
-        rowHeight = font.size + 8
+        Theme.onChange {
+            font = Theme.mono
+            rowHeight = font.size + Theme.z(8)
+            fitColumns(this)
+        }
         setShowGrid(false)
         intercellSpacing = Dimension(0, 0)
         tableHeader.reorderingAllowed = false
         fillsViewportHeight = true
-        columnModel.getColumn(0).preferredWidth = 55
-        columnModel.getColumn(1).preferredWidth = 150
-        columnModel.getColumn(2).preferredWidth = 150
         setDefaultRenderer(Any::class.java, object : DefaultTableCellRenderer() {
             override fun getTableCellRendererComponent(t: JTable, v: Any?, sel: Boolean, focus: Boolean, row: Int, col: Int): Component {
                 super.getTableCellRendererComponent(t, v, sel, false, row, col)
@@ -128,16 +128,21 @@ class RegistersPanel(private val machine: Machine) : JPanel(BorderLayout()) {
         }
         add(header, BorderLayout.NORTH)
         add(JScrollPane(table).apply {
-            preferredSize = Dimension(520, 18 * 21 + 30)
+            Theme.onChange { preferredSize = Dimension(Theme.z(520), 18 * table.rowHeight + Theme.z(30)) }
             Theme.onChange { border = javax.swing.BorderFactory.createMatteBorder(1, 0, 1, 0, Theme.grid); viewport.background = Theme.surface }
         }, BorderLayout.CENTER)
         add(flagsRow, BorderLayout.SOUTH)
     }
 
-    private fun configureColumns() {
-        table.columnModel.getColumn(0).preferredWidth = 55
-        table.columnModel.getColumn(1).preferredWidth = 150
-        table.columnModel.getColumn(2).preferredWidth = 150
+    private fun configureColumns() = fitColumns(table)
+
+    /** Column widths from the font's metrics, so values fit at every zoom level. */
+    private fun fitColumns(t: JTable) {
+        val fm = t.getFontMetrics(Theme.monoBold)
+        val pad = Theme.z(20)
+        t.columnModel.getColumn(0).preferredWidth = fm.stringWidth("rflags") + pad
+        t.columnModel.getColumn(1).preferredWidth = fm.stringWidth("00000000 00000000") + pad
+        t.columnModel.getColumn(2).preferredWidth = fm.stringWidth("-9223372036854775808") + pad
     }
 
     /** Refreshes the view; values that differ from [previous] are highlighted. */
@@ -155,8 +160,10 @@ class FlagLamp(val flag: String) : JComponent() {
     var changed = false
 
     init {
-        font = Theme.monoBold.deriveFont(10.5f)
-        preferredSize = Dimension(44, 24)
+        Theme.onChange {
+            font = Theme.mono(10.5f, Font.BOLD)
+            preferredSize = Dimension(Theme.z(44), Theme.z(24))
+        }
     }
 
     override fun paintComponent(g0: Graphics) {

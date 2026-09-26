@@ -16,11 +16,9 @@ import javax.swing.text.StyleConstants
 class ConsolePanel : JPanel(BorderLayout()) {
     private val output = JTextPane().apply {
         isEditable = false
-        font = Theme.mono
         margin = java.awt.Insets(8, 12, 8, 12)
     }
     private val input = JTextField().apply {
-        font = Theme.mono
         toolTipText = "Type a line, press Enter"
         putClientProperty("JTextField.placeholderText", "Type input for the program…")
     }
@@ -58,6 +56,8 @@ class ConsolePanel : JPanel(BorderLayout()) {
             output.background = Theme.consoleBg
             output.foreground = Theme.consoleText
             output.caretColor = Theme.consoleText
+            output.font = Theme.mono
+            input.font = Theme.mono
         }
         add(JScrollPane(output).apply { border = null }, BorderLayout.CENTER)
         add(row, BorderLayout.SOUTH)

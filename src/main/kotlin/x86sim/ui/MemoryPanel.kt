@@ -26,7 +26,7 @@ class MemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
     private var written: Set<Long> = emptySet()
 
     private val gotoField = JTextField("msg", 14).apply {
-        font = Theme.mono
+        Theme.onChange { font = Theme.mono }
         toolTipText = "Address, label or register: msg, fib+16, rbp-8"
         putClientProperty("JTextField.placeholderText", "address or label")
     }
@@ -54,8 +54,13 @@ class MemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
     }
 
     private val table = JTable(model).apply {
-        font = Theme.mono
-        rowHeight = font.size + 9
+        Theme.onChange {
+            font = Theme.mono
+            rowHeight = font.size + Theme.z(9)
+                columnModel.getColumn(0).preferredWidth = Theme.z(120)
+            for (c in 1..16) columnModel.getColumn(c).preferredWidth = Theme.z(28)
+            columnModel.getColumn(17).preferredWidth = Theme.z(160)
+        }
         setShowGrid(false)
         intercellSpacing = Dimension(0, 0)
         tableHeader.reorderingAllowed = false

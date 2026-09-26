@@ -41,10 +41,10 @@ class AsmEditor : JTextPane() {
     private var highlightPending = false
 
     init {
-        font = Theme.mono
         isOpaque = false
         margin = java.awt.Insets(4, 10, 4, 10)
         Theme.onChange {
+            font = Theme.mono
             background = Theme.editorBg
             caretColor = Theme.text
             selectionColor = if (Theme.isDark) Color(0x214283) else Color(0xA6D2FF)
@@ -220,7 +220,7 @@ class Gutter(private val editor: AsmEditor, private val breakpoints: MutableSet<
     var onToggle: (Int) -> Unit = {}
 
     init {
-        font = Theme.monoSmall
+        Theme.onChange { font = Theme.monoSmall; relayout() }
         toolTipText = "Click to toggle a breakpoint"
         addMouseListener(object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent) {
@@ -239,7 +239,7 @@ class Gutter(private val editor: AsmEditor, private val breakpoints: MutableSet<
 
     override fun getPreferredSize(): Dimension {
         val digits = maxOf(3, editor.lineCount.toString().length)
-        return Dimension(getFontMetrics(font).charWidth('0') * digits + 34, editor.preferredSize.height)
+        return Dimension(getFontMetrics(font).charWidth('0') * digits + Theme.z(34), editor.preferredSize.height)
     }
 
     override fun paintComponent(g0: Graphics) {
@@ -262,12 +262,14 @@ class Gutter(private val editor: AsmEditor, private val breakpoints: MutableSet<
             if (line in breakpoints) {
                 val active = instructionLines?.contains(line) ?: true
                 g.color = if (active) Theme.breakpoint else Theme.breakpointInactive
-                g.fillOval(5, cy - 5, 10, 10)
+                val d = Theme.z(10)
+                g.fillOval(Theme.z(5), cy - d / 2, d, d)
             }
             if (line == editor.currentLine) {
                 g.color = Theme.currentLineArrow
                 g.stroke = BasicStroke(2f)
-                val xs = intArrayOf(18, 25, 18); val ys = intArrayOf(cy - 5, cy, cy + 5)
+                val a = Theme.z(18); val b = Theme.z(25); val h = Theme.z(5)
+                val xs = intArrayOf(a, b, a); val ys = intArrayOf(cy - h, cy, cy + h)
                 g.fillPolygon(xs, ys, 3)
             }
             val s = (line + 1).toString()

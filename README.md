@@ -24,7 +24,8 @@ build/install/x86sim/bin/x86sim run --example 03_factorial
 ## Features
 
 - **Modern UI**: dark and light themes (View → Toggle Dark/Light, or the ◐ button), with Inter and
-  JetBrains Mono fonts, built on [FlatLaf](https://www.formdev.com/flatlaf/).
+  JetBrains Mono fonts. **⌘+ / ⌘− / ⌘0** (Ctrl on Windows/Linux) zooms the whole window (80%–250%),
+  e.g. for a projector; the zoom level is remembered. Built on [FlatLaf](https://www.formdev.com/flatlaf/).
 
 - **Built-in assembler**: a two-pass NASM-style assembler with labels, local labels (`.loop`),
   `db/dw/dd/dq`, `resb…resq`, `times`, `equ`, `$`, strings, and expressions. When code is invalid it

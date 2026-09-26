@@ -8,6 +8,7 @@ import x86sim.ui.MainWindow
 
 /** Dev helper: drives the UI through a scenario and saves offscreen renders as PNGs. */
 fun main(args: Array<String>) {
+    System.setProperty("x86sim.noprefs", "true")
     val out = File(args.getOrElse(0) { "build/snapshots" }).apply { mkdirs() }
     val example = args.getOrElse(1) { "03_factorial" }
     val steps = args.getOrElse(2) { "12" }.toInt()
@@ -29,6 +30,7 @@ fun main(args: Array<String>) {
             w.run()
         } else w.loadExample(example.removePrefix("CFG:"))
         repeat(steps) { w.step() }
+        repeat(args.getOrElse(5) { "0" }.toInt()) { x86sim.ui.Theme.zoomIn() }
         if (example.startsWith("CFG:")) w.showCfg()
         w.bottomTabs.selectedIndex = tab
         w.validate()

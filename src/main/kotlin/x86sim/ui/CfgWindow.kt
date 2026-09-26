@@ -72,6 +72,7 @@ class CfgWindow(
         functionBox.addActionListener { if (!updatingBox) { followBox.isSelected = false; rebuildCanvas() } }
         followBox.addActionListener { refresh() }
         zoom.addChangeListener { canvas.relayout() }
+        Theme.onChange { canvas.relayout() }
 
         contentPane = JPanel(BorderLayout()).apply {
             add(top, BorderLayout.NORTH)
@@ -100,7 +101,7 @@ class CfgWindow(
                 g2.drawLine(x + 1, y + 5, x + 20, y + 5)
             }
         }
-        font = font.deriveFont(11f)
+        Theme.onChange { font = Theme.ui(11f) }
     }
 
     /** Call after assembling: rebuilds the graph for the new program. */
@@ -146,7 +147,7 @@ class CfgWindow(
         private var codeFont = Theme.monoSmall
         private var headFont = Theme.monoBold
 
-        private val scale get() = zoom.value / 100f
+        private val scale get() = zoom.value / 100f * Theme.zoom
         private val lineH get() = (17 * scale).toInt()
         private val pad get() = (8 * scale).toInt()
         private val gap get() = (40 * scale).toInt()
@@ -169,8 +170,8 @@ class CfgWindow(
         }
 
         fun relayout() {
-            codeFont = Theme.monoSmall.deriveFont(12f * scale)
-            headFont = Theme.monoBold.deriveFont(12f * scale)
+            codeFont = Theme.mono(12f * zoom.value / 100f)
+            headFont = Theme.mono(12f * zoom.value / 100f, Font.BOLD)
             boxes.clear(); routes.clear()
             val f = fn ?: run { preferredSize = Dimension(10, 10); revalidate(); repaint(); return }
             val fm = getFontMetrics(codeFont)

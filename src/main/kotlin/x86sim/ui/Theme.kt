@@ -5,6 +5,7 @@ import com.formdev.flatlaf.fonts.inter.FlatInterFont
 import com.formdev.flatlaf.fonts.jetbrains_mono.FlatJetBrainsMonoFont
 import com.formdev.flatlaf.themes.FlatMacDarkLaf
 import com.formdev.flatlaf.themes.FlatMacLightLaf
+import com.formdev.flatlaf.util.UIScale
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Component
@@ -84,7 +85,9 @@ object Theme {
         private set
     val isDark get() = p.dark
 
-    private val prefs: Preferences? = try { Preferences.userRoot().node("x86sim") } catch (_: Exception) { null }
+    /** Saved theme and zoom. Disabled with -Dx86sim.noprefs (used by the screenshot harness). */
+    private val prefs: Preferences? = if (System.getProperty("x86sim.noprefs") != null) null
+        else try { Preferences.userRoot().node("x86sim") } catch (_: Exception) { null }
     private val listeners = mutableListOf<() -> Unit>()
 
     /** Registers code that re-applies colours set at construction time. Runs once immediately. */
@@ -145,10 +148,43 @@ object Theme {
     /** "#rrggbb" for use inside HTML labels. */
     fun hex(color: Color) = "#%06x".format(color.rgb and 0xFFFFFF)
 
-    // ---- fonts ----
-    val mono: Font get() = Font(FlatJetBrainsMonoFont.FAMILY, Font.PLAIN, 13)
-    val monoSmall: Font get() = Font(FlatJetBrainsMonoFont.FAMILY, Font.PLAIN, 12)
-    val monoBold: Font get() = Font(FlatJetBrainsMonoFont.FAMILY, Font.BOLD, 13)
+    // ---- zoom (⌘+ / ⌘− / ⌘0) ----
+
+    /** Current zoom factor; 1.0 = 100%. Everything we size or paint ourselves is multiplied by it. */
+    val zoom: Float get() = UIScale.getZoomFactor()
+    /** A pixel size scaled by the current zoom. */
+    fun z(px: Int): Int = Math.round(px * zoom)
+    fun zf(pt: Float): Float = pt * zoom
+
+    private val zoomSteps = floatArrayOf(0.8f, 0.9f, 1f, 1.1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f)
+
+    fun zoomIn() = applyZoom { UIScale.zoomIn() }
+    fun zoomOut() = applyZoom { UIScale.zoomOut() }
+    fun zoomReset() = applyZoom { UIScale.zoomReset() }
+
+    private fun applyZoom(change: () -> Boolean): Boolean {
+        if (!change()) return false // already at the smallest / largest step
+        prefs?.putFloat("zoom", zoom)
+        refreshAll()
+        return true
+    }
+
+    /** Re-applies the look and feel, then lets every component re-apply its own fonts, sizes and colours. */
+    private fun refreshAll() {
+        FlatLaf.updateUI()
+        listeners.forEach { it() }
+        for (w in Window.getWindows()) { w.revalidate(); w.repaint() }
+    }
+
+    // ---- fonts (scaled with the zoom) ----
+    private fun monoFont(style: Int, size: Float) = Font(FlatJetBrainsMonoFont.FAMILY, style, 1).deriveFont(zf(size))
+    val mono: Font get() = monoFont(Font.PLAIN, 13f)
+    val monoSmall: Font get() = monoFont(Font.PLAIN, 12f)
+    val monoBold: Font get() = monoFont(Font.BOLD, 13f)
+    fun mono(size: Float, style: Int = Font.PLAIN) = monoFont(style, size)
+    /** The UI (Inter) font at a given point size, scaled with the zoom. */
+    fun ui(size: Float, style: Int = Font.PLAIN): Font = UIManager.getFont("defaultFont")?.deriveFont(style, zf(size))
+        ?: Font(FlatInterFont.FAMILY, style, 1).deriveFont(zf(size))
 
     // ---- look and feel ----
 
@@ -159,6 +195,8 @@ object Theme {
         FlatLaf.setPreferredFontFamily(FlatInterFont.FAMILY)
         FlatLaf.setPreferredMonospacedFontFamily(FlatJetBrainsMonoFont.FAMILY)
         p = if (prefs?.get("theme", "dark") == "light") LIGHT else DARK
+        UIScale.setSupportedZoomFactors(zoomSteps)
+        prefs?.getFloat("zoom", 1f)?.takeIf { it in zoomSteps.toList() && it != 1f }?.let { UIScale.setZoomFactor(it) }
         setupLaf()
     }
 
@@ -198,8 +236,7 @@ object Theme {
 
     /** A small uppercase panel heading, e.g. "REGISTERS". */
     fun sectionLabel(text: String) = JLabel(text.uppercase()).apply {
-        onChange { foreground = dim }
-        font = font.deriveFont(Font.BOLD, 11f)
+        onChange { foreground = dim; font = ui(11f, Font.BOLD) }
         border = BorderFactory.createEmptyBorder(8, 10, 6, 8)
     }
 
@@ -217,7 +254,7 @@ class Pill : JLabel() {
         set(v) { field = v; repaint() }
 
     init {
-        font = font.deriveFont(Font.BOLD, 11.5f)
+        Theme.onChange { font = Theme.ui(11.5f, Font.BOLD) }
         border = BorderFactory.createEmptyBorder(3, 10, 3, 10)
         isOpaque = false
     }
@@ -237,13 +274,14 @@ class Pill : JLabel() {
 class ToolIcon(private val kind: Kind, private val tint: (() -> Color)? = null) : Icon {
     enum class Kind { BUILD, RUN, PAUSE, STEP, OVER, OUT, RESET, GRAPH, THEME }
 
-    override fun getIconWidth() = 16
-    override fun getIconHeight() = 16
+    override fun getIconWidth() = Theme.z(16)
+    override fun getIconHeight() = Theme.z(16)
 
     override fun paintIcon(c: Component?, g0: Graphics, x: Int, y: Int) {
         val g = g0.create() as Graphics2D
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         g.translate(x, y)
+        g.scale(Theme.zoom.toDouble(), Theme.zoom.toDouble())
         val enabled = c?.isEnabled ?: true
         val base = tint?.invoke() ?: Theme.text
         g.color = if (enabled) base else Theme.dim.let { Color(it.red, it.green, it.blue, 110) }

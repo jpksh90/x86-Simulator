@@ -43,7 +43,7 @@ class StackMemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
     private val showBytes = JCheckBox("Bytes", false).apply {
         toolTipText = "Show the 8 bytes of each word (little-endian)"
     }
-    private val summary = JLabel(" ").apply { foreground = Theme.dim; font = font.deriveFont(11f) }
+    private val summary = JLabel(" ").apply { Theme.onChange { foreground = Theme.dim; font = Theme.ui(11f) } }
     private val diagram = Diagram()
     private val scroll = JScrollPane(diagram).apply {
         verticalScrollBar.unitIncrement = 16
@@ -72,13 +72,12 @@ class StackMemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
         }, BorderLayout.NORTH)
         add(scroll, BorderLayout.CENTER)
         preferredSize = Dimension(580, 600)
-        Theme.onChange { scroll.border = BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.grid) }
+        Theme.onChange { scroll.border = BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.grid); refresh() }
         minimumSize = Dimension(420, 300)
     }
 
     private fun swatch(c: (() -> Color)?, text: String) = JLabel(text).apply {
-        Theme.onChange { foreground = Theme.dim }
-        font = font.deriveFont(11f)
+        Theme.onChange { foreground = Theme.dim; font = Theme.ui(11f) }
         icon = object : javax.swing.Icon {
             override fun getIconWidth() = 14
             override fun getIconHeight() = 12
@@ -126,13 +125,14 @@ class StackMemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
         private var words: List<Word> = emptyList()
         private var frames: List<Frame> = emptyList()
 
-        private val rowH get() = if (showBytes.isSelected) 62 else 44
-        private val top = 8
-        private val xFrame = 6
-        private val xOff = 40
-        private val xCell = 136
-        private val wCell = 196
-        private val xNote = xCell + wCell + 10
+        // Layout in pixels at 100%, scaled with the zoom.
+        private val rowH get() = Theme.z(if (showBytes.isSelected) 62 else 44)
+        private val top get() = Theme.z(8)
+        private val xFrame get() = Theme.z(6)
+        private val xOff get() = Theme.z(40)
+        private val xCell get() = Theme.z(136)
+        private val wCell get() = Theme.z(196)
+        private val xNote get() = xCell + wCell + Theme.z(10)
 
         init {
             ToolTipManager.sharedInstance().registerComponent(this)
@@ -230,7 +230,7 @@ class StackMemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
             summary.text = "${used / 8} word${if (used / 8 == 1L) "" else "s"} used" +
                 (if (inStack(bp)) " · frame ${(bp + 16 - sp) / 8}" else "") +
                 " · grows ${if (highAtTop.isSelected) "↓" else "↑"}"
-            preferredSize = Dimension(xNote + 215, top * 2 + words.size * rowH)
+            preferredSize = Dimension(xNote + Theme.z(215), top * 2 + words.size * rowH)
             revalidate(); repaint()
         }
 
@@ -292,11 +292,11 @@ class StackMemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
             g.fillRect(0, 0, width, height)
             if (words.isEmpty()) {
                 g.color = Theme.dim
-                g.drawString("Assemble a program to see its stack.", 12, 24)
+                g.drawString("Build a program to see its stack", Theme.z(12), Theme.z(24))
                 return
             }
             val mono = Theme.mono
-            val small = Theme.monoSmall.deriveFont(10.5f)
+            val small = Theme.mono(10.5f)
             val bold = Theme.monoBold
 
             // Frame brackets.
@@ -304,25 +304,25 @@ class StackMemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
                 val r1 = rowOf(f.low); val r2 = rowOf(f.high)
                 if (r1 < 0 || r2 < 0) return@forEachIndexed
                 val a = minOf(r1, r2); val b = maxOf(r1, r2)
-                val y1 = top + a * rowH + 2; val y2 = top + (b + 1) * rowH - 2
+                val y1 = top + a * rowH + Theme.z(2); val y2 = top + (b + 1) * rowH - Theme.z(2)
                 val col = Theme.frameColor(k)
                 g.color = col
-                g.fillRoundRect(xFrame, y1, 24, y2 - y1, 8, 8)
+                g.fillRoundRect(xFrame, y1, Theme.z(24), y2 - y1, Theme.z(8), Theme.z(8))
                 if (f.current) {
                     g.color = Theme.accent
                     g.stroke = BasicStroke(2f)
-                    g.drawRoundRect(xFrame, y1, 24, y2 - y1, 8, 8)
+                    g.drawRoundRect(xFrame, y1, Theme.z(24), y2 - y1, Theme.z(8), Theme.z(8))
                 }
                 // function name, rotated along the bracket
                 val label = (if (f.current) "▶ " else "") + f.name
                 val old = g.transform
-                g.font = Theme.monoBold.deriveFont(11f)
+                g.font = Theme.mono(11f, Font.BOLD)
                 val fm = g.fontMetrics
                 val cy = (y1 + y2) / 2
-                g.transform(AffineTransform.getRotateInstance(-Math.PI / 2, (xFrame + 12).toDouble(), cy.toDouble()))
+                g.transform(AffineTransform.getRotateInstance(-Math.PI / 2, (xFrame + Theme.z(12)).toDouble(), cy.toDouble()))
                 g.color = Theme.text
                 val text = if (fm.stringWidth(label) > y2 - y1 - 6) label.take(maxOf(1, (y2 - y1 - 6) / fm.charWidth('m'))) else label
-                g.drawString(text, xFrame + 12 - fm.stringWidth(text) / 2, cy + fm.ascent / 2 - 1)
+                g.drawString(text, xFrame + Theme.z(12) - fm.stringWidth(text) / 2, cy + fm.ascent / 2 - 1)
                 g.transform = old
             }
 
@@ -335,81 +335,81 @@ class StackMemoryPanel(private val machine: Machine) : JPanel(BorderLayout()) {
                     g.color = Theme.accent
                     g.stroke = BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1f, floatArrayOf(6f, 4f), 0f)
                     val ly = if (highAtTop.isSelected) y + rowH else y + rowH
-                    g.drawLine(xOff - 4, ly, width, ly)
+                    g.drawLine(xOff - Theme.z(4), ly, width, ly)
                     g.stroke = BasicStroke(1f)
                 }
 
                 // offset + address
                 g.font = if (w.pointers.contains("RBP") || w.pointers.contains("RSP")) bold else mono
                 g.color = if (w.free) Theme.dim else Theme.text
-                g.drawString(w.offset, xOff, y + 18)
+                g.drawString(w.offset, xOff, y + Theme.z(18))
                 g.font = small
                 g.color = Theme.dim
-                g.drawString(w.offset2, xOff, y + 34)
+                g.drawString(w.offset2, xOff, y + Theme.z(34))
 
                 // the word cell
-                val cell = Rectangle(xCell, y + 3, wCell, rowH - 6)
+                val cell = Rectangle(xCell, y + Theme.z(3), wCell, rowH - Theme.z(6))
                 g.paint = when {
                     w.free -> Theme.freeBg
                     w.writtenNow -> Theme.changed
                     !w.touched -> hatch()
                     else -> Theme.cellBg
                 }
-                g.fillRoundRect(cell.x, cell.y, cell.width, cell.height, 6, 6)
+                g.fillRoundRect(cell.x, cell.y, cell.width, cell.height, Theme.z(6), Theme.z(6))
                 g.color = if (w.writtenNow) Theme.changedStrong else Theme.cellBorder
                 g.stroke = BasicStroke(if (w.writtenNow) 2f else 1f)
-                g.drawRoundRect(cell.x, cell.y, cell.width, cell.height, 6, 6)
+                g.drawRoundRect(cell.x, cell.y, cell.width, cell.height, Theme.z(6), Theme.z(6))
                 g.stroke = BasicStroke(1f)
 
                 g.font = bold
                 g.color = when { w.free -> Theme.dim; !w.touched -> Theme.warn; else -> Theme.text }
-                g.drawString(if (!w.touched && !w.free) "?" else formatValue(w), cell.x + 8, y + 18)
+                g.drawString(if (!w.touched && !w.free) "?" else formatValue(w), cell.x + Theme.z(8), y + Theme.z(18))
                 g.font = small
                 g.color = Theme.dim
-                g.drawString("%016x".format(w.value), cell.x + 8, y + 33)
+                g.drawString("%016x".format(w.value), cell.x + Theme.z(8), y + Theme.z(33))
 
                 if (showBytes.isSelected) {
-                    val bw = (wCell - 12) / 8
+                    val bw = (wCell - Theme.z(12)) / 8
                     for (b in 0 until 8) {
-                        val bx = cell.x + 6 + b * bw
-                        val by = y + 39
+                        val bx = cell.x + Theme.z(6) + b * bw
+                        val by = y + Theme.z(39)
                         val byteTouched = machine.memory.isTouched(w.addr + b)
                         g.color = when {
                             b in w.writtenBytes -> Theme.changedStrong
                             !byteTouched && !w.free -> Theme.hatchBg
                             else -> Theme.surface
                         }
-                        g.fillRect(bx, by, bw - 2, 16)
+                        g.fillRect(bx, by, bw - 2, Theme.z(16))
                         g.color = Theme.grid
-                        g.drawRect(bx, by, bw - 2, 16)
+                        g.drawRect(bx, by, bw - 2, Theme.z(16))
                         g.font = small
                         g.color = if (w.free) Theme.dim else Theme.text
                         val s = if (byteTouched || w.free) "%02x".format((w.value ushr (8 * b)) and 0xFF) else "??"
-                        g.drawString(s, bx + (bw - 2 - g.fontMetrics.stringWidth(s)) / 2, by + 12)
+                        g.drawString(s, bx + (bw - 2 - g.fontMetrics.stringWidth(s)) / 2, by + Theme.z(12))
                     }
                 }
 
                 // pointers (line 1) and note (line 2)
                 if (w.pointers.isNotEmpty()) {
                     var px = xNote
-                    g.font = Theme.monoBold.deriveFont(11.5f)
+                    g.font = Theme.mono(11.5f, Font.BOLD)
                     for (p in w.pointers) {
                         val label = "◀ $p"
                         g.color = when (p) { "RSP" -> Theme.accent; "RBP" -> Theme.synRegister; else -> Theme.synDirective }
-                        g.drawString(label, px, y + 18)
-                        px += g.fontMetrics.stringWidth(label) + 10
+                        g.drawString(label, px, y + Theme.z(18))
+                        px += g.fontMetrics.stringWidth(label) + Theme.z(10)
                     }
                 }
-                g.font = Theme.monoSmall.deriveFont(11f)
+                g.font = Theme.mono(11f)
                 g.color = w.noteColor
                 val fm = g.fontMetrics
                 var note = w.note
-                val maxW = width - xNote - 6
+                val maxW = width - xNote - Theme.z(6)
                 if (fm.stringWidth(note) > maxW) {
                     while (note.isNotEmpty() && fm.stringWidth("$note…") > maxW) note = note.dropLast(1)
                     note += "…"
                 }
-                g.drawString(note, xNote, y + if (w.pointers.isEmpty()) 26 else 34)
+                g.drawString(note, xNote, y + Theme.z(if (w.pointers.isEmpty()) 26 else 34))
             }
         }
     }

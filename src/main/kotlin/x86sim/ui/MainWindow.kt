@@ -113,7 +113,11 @@ class MainWindow : JFrame() {
     }
     private var cfgWindow: CfgWindow? = null
     private var rightPanel: JSplitPane? = null
+    private var topPanel: JSplitPane? = null
     private val cfgAction = action("Graph", "Control flow graph (⇧⌘G)", KeyStroke.getKeyStroke(KeyEvent.VK_G, menuKey or InputEvent.SHIFT_DOWN_MASK), ToolIcon.Kind.GRAPH) { showCfg() }
+    private val zoomInAction = action("Zoom In", "Bigger text (⌘+)", KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, menuKey)) { zoom(Theme::zoomIn) }
+    private val zoomOutAction = action("Zoom Out", "Smaller text (⌘−)", KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, menuKey)) { zoom(Theme::zoomOut) }
+    private val zoomResetAction = action("Actual Size", "Reset zoom (⌘0)", KeyStroke.getKeyStroke(KeyEvent.VK_0, menuKey)) { zoom(Theme::zoomReset) }
     private val themeAction = action("Toggle Dark/Light", "Dark / light theme", null, ToolIcon.Kind.THEME) { Theme.toggle() }
 
     private val clearBreakpointsAction = action("Clear All Breakpoints", "Clear breakpoints", null) {
@@ -232,8 +236,10 @@ class MainWindow : JFrame() {
             add(speedSlider)
             add(speedValue.apply {
                 text = speedLabels[speedSlider.value]
-                preferredSize = Dimension(48, 20); maximumSize = Dimension(48, 20)
-                font = Theme.monoSmall
+                Theme.onChange {
+                    font = Theme.monoSmall
+                    preferredSize = Dimension(Theme.z(48), Theme.z(20)); maximumSize = preferredSize
+                }
             })
             addSeparator(Dimension(10, 0))
             add(JButton(themeAction).apply { text = null; isFocusable = false })
@@ -245,20 +251,22 @@ class MainWindow : JFrame() {
             Theme.onChange { border = BorderFactory.createMatteBorder(1, 0, 1, 0, Theme.grid) }
         }
         nextLabel.apply {
-            font = Theme.monoSmall
+            Theme.onChange { font = Theme.monoSmall }
             border = BorderFactory.createEmptyBorder(7, 12, 7, 12)
             isOpaque = true
             Theme.onChange { background = Theme.bg; foreground = Theme.text }
         }
         val editorPanel = JPanel(BorderLayout()).apply {
-            preferredSize = Dimension(760, 500)
+            Theme.onChange { preferredSize = Dimension(Theme.z(620), Theme.z(500)) }
             add(Theme.sectionLabel("Program"), BorderLayout.NORTH)
             add(editorScroll, BorderLayout.CENTER)
             add(nextLabel, BorderLayout.SOUTH)
         }
 
-        registers.preferredSize = Dimension(400, 500)
-        registers.minimumSize = Dimension(330, 300)
+        Theme.onChange {
+            registers.preferredSize = Dimension(Theme.z(420), Theme.z(500))
+            registers.minimumSize = Dimension(Theme.z(300), Theme.z(300))
+        }
         val right = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, registers, stackMemory).apply {
             resizeWeight = 0.4; border = null; isContinuousLayout = true
         }
@@ -266,9 +274,10 @@ class MainWindow : JFrame() {
         val top = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, editorPanel, right).apply {
             resizeWeight = 0.42; border = null; isContinuousLayout = true
         }
+        topPanel = top
 
         problemList.apply {
-            font = Theme.mono
+            Theme.onChange { font = Theme.mono }
             cellRenderer = javax.swing.DefaultListCellRenderer().let { base ->
                 javax.swing.ListCellRenderer<AsmError> { list, value, index, sel, focus ->
                     (base.getListCellRendererComponent(list, "×  L${value.line + 1}  ${value.message}", index, sel, focus) as JLabel).apply {
@@ -308,7 +317,7 @@ class MainWindow : JFrame() {
                 add(stateLabel); add(messageLabel)
             }
             add(left, BorderLayout.CENTER)
-            add(stepsLabel.apply { font = Theme.monoSmall }, BorderLayout.EAST)
+            add(stepsLabel.apply { Theme.onChange { font = Theme.monoSmall } }, BorderLayout.EAST)
         }
 
         return JPanel(BorderLayout()).apply {
@@ -345,6 +354,8 @@ class MainWindow : JFrame() {
             add(JMenuItem(cfgAction).apply { text = "Control Flow Graph" })
             add(JMenuItem(themeAction))
             addSeparator()
+            add(JMenuItem(zoomInAction)); add(JMenuItem(zoomOutAction)); add(JMenuItem(zoomResetAction))
+            addSeparator()
             add(javax.swing.JCheckBoxMenuItem("Stack Panel", true).apply {
                 accelerator = KeyStroke.getKeyStroke(KeyEvent.VK_M, menuKey or InputEvent.SHIFT_DOWN_MASK)
                 addActionListener {
@@ -377,6 +388,35 @@ class MainWindow : JFrame() {
         fun bind(ks: String, a: Action) { im.put(KeyStroke.getKeyStroke(ks), ks); am.put(ks, a) }
         bind("F5", runAction); bind("F6", pauseAction); bind("F7", stepAction)
         bind("F8", stepOverAction); bind("shift F8", stepOutAction); bind("F9", breakpointAction)
+        bindZoomKeys(rootPane)
+    }
+
+    /** ⌘= / ⌘+ (with or without Shift, or the keypad +), ⌘− and ⌘0 — in any window of the app. */
+    internal fun bindZoomKeys(root: javax.swing.JRootPane) {
+        val im = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+        val am = root.actionMap
+        val shift = InputEvent.SHIFT_DOWN_MASK
+        for ((key, mods) in listOf(KeyEvent.VK_EQUALS to 0, KeyEvent.VK_EQUALS to shift, KeyEvent.VK_PLUS to 0,
+            KeyEvent.VK_PLUS to shift, KeyEvent.VK_ADD to 0)) {
+            im.put(KeyStroke.getKeyStroke(key, menuKey or mods), "zoomIn")
+        }
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, menuKey), "zoomOut")
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, menuKey), "zoomOut")
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, menuKey), "zoomReset")
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_NUMPAD0, menuKey), "zoomReset")
+        am.put("zoomIn", zoomInAction); am.put("zoomOut", zoomOutAction); am.put("zoomReset", zoomResetAction)
+    }
+
+    private fun zoom(change: () -> Boolean) {
+        if (!change()) {
+            message(if (Theme.zoom >= 1f) "Maximum zoom" else "Minimum zoom", Theme.warn)
+            return
+        }
+        // Give each pane room for its larger contents.
+        topPanel?.resetToPreferredSizes()
+        rightPanel?.resetToPreferredSizes()
+        editor.scrollToLine(maxOf(editor.currentLine, 0))
+        message("Zoom ${Math.round(Theme.zoom * 100)}%", Theme.accent)
     }
 
     // ---------------- files ----------------
@@ -634,6 +674,7 @@ class MainWindow : JFrame() {
         }
         val w = cfgWindow ?: CfgWindow(this, machine, breakpoints) { editor.goToLine(it) }.also {
             cfgWindow = it
+            bindZoomKeys(it.rootPane)
             it.programChanged()
         }
         w.refresh()
