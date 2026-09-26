@@ -272,7 +272,7 @@ class Pill : JLabel() {
 
 /** Small vector icons for the toolbar, drawn in the current theme's colours. */
 class ToolIcon(private val kind: Kind, private val tint: (() -> Color)? = null) : Icon {
-    enum class Kind { BUILD, RUN, PAUSE, STEP, OVER, OUT, RESET, GRAPH, THEME }
+    enum class Kind { BUILD, RUN, PAUSE, STEP, BACK, OVER, OUT, RESET, GRAPH, THEME }
 
     override fun getIconWidth() = Theme.z(16)
     override fun getIconHeight() = Theme.z(16)
@@ -291,6 +291,12 @@ class ToolIcon(private val kind: Kind, private val tint: (() -> Color)? = null) 
             Kind.PAUSE -> { g.fillRoundRect(3, 3, 3, 10, 2, 2); g.fillRoundRect(10, 3, 3, 10, 2, 2) }
             Kind.STEP -> {
                 g.drawLine(8, 2, 8, 10); g.drawLine(5, 7, 8, 10); g.drawLine(11, 7, 8, 10)
+                g.fillOval(6, 12, 4, 4)
+            }
+            Kind.BACK -> {
+                // an arrow curving back up and to the left: "undo one step"
+                g.draw(Arc2D.Double(4.0, 3.0, 9.0, 9.0, 90.0, -210.0, Arc2D.OPEN))
+                g.fill(Path2D.Double().apply { moveTo(3.0, 3.0); lineTo(8.5, 0.5); lineTo(8.5, 5.5); closePath() })
                 g.fillOval(6, 12, 4, 4)
             }
             Kind.OVER -> {

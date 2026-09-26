@@ -2,6 +2,15 @@ package x86sim.cpu
 
 class CpuFault(message: String) : RuntimeException(message)
 
+/** What one memory write overwrote, so it can be undone (see [Memory.undoLog]). */
+class MemUndo(
+    val region: Region,
+    val offset: Int,
+    val oldBytes: ByteArray,
+    val oldTouched: Int,      // bit i = byte offset+i had been written before
+    val oldWriters: IntArray, // writer tags of the 8-byte words the write touched
+)
+
 class Region(val name: String, val start: Long, val size: Int, val writable: Boolean) {
     val bytes = ByteArray(size)
     /** Bytes the program has written since it was loaded (the rest would be leftover garbage on real hardware). */
@@ -25,6 +34,8 @@ class Memory {
     var logWrites = false
     /** Recorded in [Region.writer] for every write; the machine sets it to the current source line. */
     var writerTag = -1
+    /** When non-null, every write first appends what it is about to overwrite (for stepping back). */
+    var undoLog: MutableList<MemUndo>? = null
     val writeLog = mutableListOf<Pair<Long, Int>>()
 
     fun map(region: Region): Region { regions += region; return region }
@@ -54,10 +65,27 @@ class Memory {
     fun write(addr: Long, size: Int, value: Long) {
         val r = regionFor(addr, size, write = true)
         val off = (addr - r.start).toInt()
+        undoLog?.let { log ->
+            var touched = 0
+            for (i in 0 until size) if (r.touched[off + i]) touched = touched or (1 shl i)
+            log += MemUndo(r, off, r.bytes.copyOfRange(off, off + size), touched,
+                IntArray((off + size - 1) / 8 - off / 8 + 1) { r.writer[off / 8 + it] })
+        }
         for (i in 0 until size) r.bytes[off + i] = (value ushr (8 * i)).toByte()
         r.touched.set(off, off + size)
         for (w in off / 8..(off + size - 1) / 8) r.writer[w] = writerTag
         if (logWrites) writeLog += addr to size
+    }
+
+    /** Reverts writes recorded in an undo log, newest first. */
+    fun undo(log: List<MemUndo>) {
+        for (u in log.asReversed()) {
+            val r = u.region
+            u.oldBytes.copyInto(r.bytes, u.offset)
+            for (i in u.oldBytes.indices) r.touched[u.offset + i] = (u.oldTouched shr i) and 1 == 1
+            u.oldWriters.forEachIndexed { k, w -> r.writer[u.offset / 8 + k] = w }
+            if (logWrites) writeLog += (r.start + u.offset) to u.oldBytes.size
+        }
     }
 
     /** Reads a byte without faulting, for display purposes; null when unmapped. */

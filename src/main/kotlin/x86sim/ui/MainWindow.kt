@@ -104,6 +104,7 @@ class MainWindow : JFrame() {
     private val assembleAction = action("Assemble", "Assemble (⌘B)", KeyStroke.getKeyStroke(KeyEvent.VK_B, menuKey), ToolIcon.Kind.BUILD) { assemble() }
     private val runAction = action("Run", "Run (F5)", KeyStroke.getKeyStroke(KeyEvent.VK_R, menuKey), ToolIcon.Kind.RUN) { run() }
     private val pauseAction = action("Pause", "Pause (F6)", KeyStroke.getKeyStroke(KeyEvent.VK_PERIOD, menuKey), ToolIcon.Kind.PAUSE) { pause("Paused") }
+    private val stepBackAction = action("Step Back", "Undo one step (⇧F7 / ⌘[)", KeyStroke.getKeyStroke(KeyEvent.VK_OPEN_BRACKET, menuKey), ToolIcon.Kind.BACK) { stepBack() }
     private val stepAction = action("Step", "Step into (F7)", KeyStroke.getKeyStroke(KeyEvent.VK_J, menuKey), ToolIcon.Kind.STEP) { step() }
     private val stepOverAction = action("Step Over", "Step over calls (F8)", KeyStroke.getKeyStroke(KeyEvent.VK_K, menuKey), ToolIcon.Kind.OVER) { stepOver() }
     private val stepOutAction = action("Step Out", "Step out of function (⇧F8)", KeyStroke.getKeyStroke(KeyEvent.VK_K, menuKey or InputEvent.SHIFT_DOWN_MASK), ToolIcon.Kind.OUT) { stepOut() }
@@ -134,6 +135,8 @@ class MainWindow : JFrame() {
         machine.memory.logWrites = true
         machine.onOutput = { console.print(it) }
         machine.onNotice = { console.system(it) }
+        machine.outputMark = { console.mark() }
+        machine.onRewindOutput = { console.rewind(it) }
 
         console.onInput = { text ->
             console.echoInput(text)
@@ -214,6 +217,7 @@ class MainWindow : JFrame() {
             })
             add(button(pauseAction, "Pause"))
             addSeparator(Dimension(6, 0))
+            add(button(stepBackAction, "Back"))
             add(button(stepAction, "Step"))
             add(button(stepOverAction, "Over"))
             add(button(stepOutAction, "Out"))
@@ -345,7 +349,7 @@ class MainWindow : JFrame() {
             add(item("Redo", KeyEvent.VK_Z, InputEvent.SHIFT_DOWN_MASK) { if (editor.undo.canRedo()) editor.undo.redo() })
         })
         add(JMenu("Run").apply {
-            for (a in listOf(assembleAction, runAction, pauseAction, stepAction, stepOverAction, stepOutAction, resetAction))
+            for (a in listOf(assembleAction, runAction, pauseAction, stepAction, stepBackAction, stepOverAction, stepOutAction, resetAction))
                 add(JMenuItem(a))
             addSeparator()
             add(JMenuItem(breakpointAction)); add(JMenuItem(clearBreakpointsAction))
@@ -386,7 +390,7 @@ class MainWindow : JFrame() {
         val im = rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
         val am = rootPane.actionMap
         fun bind(ks: String, a: Action) { im.put(KeyStroke.getKeyStroke(ks), ks); am.put(ks, a) }
-        bind("F5", runAction); bind("F6", pauseAction); bind("F7", stepAction)
+        bind("F5", runAction); bind("F6", pauseAction); bind("F7", stepAction); bind("shift F7", stepBackAction)
         bind("F8", stepOverAction); bind("shift F8", stepOutAction); bind("F9", breakpointAction)
         bindZoomKeys(rootPane)
     }
@@ -545,6 +549,18 @@ class MainWindow : JFrame() {
     }
 
     internal fun run() = startRun(null, "")
+
+    /** Undoes the last executed instruction: registers, flags, memory, output and consumed input. */
+    internal fun stepBack() {
+        if (running || stale || !machine.canStepBack) return
+        val before = CpuSnapshot.of(machine)
+        machine.memory.clearWriteLog()
+        resumeAfterInput = false; stepAfterInput = false
+        machine.stepBack()
+        console.setWaiting(machine.state == MachineState.WAITING_INPUT)
+        refresh(before)
+        message(if (machine.canStepBack) "Stepped back" else "At the start", Theme.accent)
+    }
 
     internal fun stepOver() {
         if (running || !prepare()) return
@@ -743,6 +759,7 @@ class MainWindow : JFrame() {
         assembleAction.isEnabled = !running
         runAction.isEnabled = canGo
         stepAction.isEnabled = canGo
+        stepBackAction.isEnabled = !running && !stale && machine.canStepBack
         stepOverAction.isEnabled = canGo
         stepOutAction.isEnabled = canGo
         pauseAction.isEnabled = running

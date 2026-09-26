@@ -43,6 +43,12 @@ class Cpu(val memory: Memory) {
             return f
         }
 
+    /** Restores the flags from an RFLAGS value (the inverse of [rflags]). */
+    fun setFlags(f: Long) {
+        cf = f and 0x1 != 0L; pf = f and 0x4 != 0L; af = f and 0x10 != 0L
+        zf = f and 0x40 != 0L; sf = f and 0x80 != 0L; df = f and 0x400 != 0L; of = f and 0x800 != 0L
+    }
+
     fun currentInstruction(): Instruction? = code[rip]
 
     // ---- registers -------------------------------------------------------------------

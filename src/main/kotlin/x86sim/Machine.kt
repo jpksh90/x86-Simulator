@@ -50,6 +50,49 @@ class Machine {
     private val stdin = ArrayDeque<Byte>()
     private var stdinClosed = false
 
+    // ---------------- history (step back) ----------------
+
+    /** Everything one step changed, so it can be undone. */
+    private class StepRecord(
+        val regs: LongArray, val rip: Long, val flags: Long,
+        val state: MachineState, val message: String, val steps: Long, val exitCode: Int?,
+        val outputMark: Int,
+    ) {
+        val memory = mutableListOf<x86sim.cpu.MemUndo>()
+        val stdinTaken = mutableListOf<Byte>()
+    }
+
+    private val history = ArrayDeque<StepRecord>()
+    private var recording: StepRecord? = null
+
+    /** Whether steps are recorded so they can be undone (the CLI turns this off). */
+    var keepHistory = true
+    /** How many steps can be undone at most; older ones are forgotten. */
+    var historyLimit = 50_000
+
+    /** Returns a position in the program's output; restored with [onRewindOutput] when stepping back. */
+    var outputMark: () -> Int = { 0 }
+    var onRewindOutput: (Int) -> Unit = {}
+
+    val canStepBack get() = history.isNotEmpty()
+    val historySize get() = history.size
+
+    /** Undoes the most recent step. Returns false when there's nothing to undo. */
+    fun stepBack(): Boolean {
+        val r = history.removeLastOrNull() ?: return false
+        memory.undo(r.memory)
+        r.regs.copyInto(cpu.regs)
+        cpu.rip = r.rip
+        cpu.setFlags(r.flags)
+        state = r.state
+        message = r.message
+        steps = r.steps
+        exitCode = r.exitCode
+        for (b in r.stdinTaken.asReversed()) stdin.addFirst(b)
+        onRewindOutput(r.outputMark)
+        return true
+    }
+
     val isFinished get() = state == MachineState.EXITED || state == MachineState.HALTED || state == MachineState.FAULTED
     val canStep get() = state == MachineState.READY || state == MachineState.PAUSED
 
@@ -75,6 +118,7 @@ class Machine {
         cpu.push(EXIT_ADDRESS) // so that `ret` from the entry function ends the program cleanly
         memory.clearWriteLog()
         stdin.clear(); stdinClosed = false
+        history.clear()
         steps = 0
         exitCode = null
         state = MachineState.READY
@@ -97,13 +141,22 @@ class Machine {
     fun step(): Boolean {
         if (!canStep) return false
         memory.writerTag = cpu.currentInstruction()?.line ?: -1
+        val rec = if (keepHistory) StepRecord(cpu.regs.copyOf(), cpu.rip, cpu.rflags, state, message, steps, exitCode, outputMark()) else null
+        recording = rec
+        memory.undoLog = rec?.memory
         val result = try {
             cpu.step()
         } catch (f: CpuFault) {
             state = MachineState.FAULTED
             message = f.message ?: "fault"
+            remember(rec) // a crash can be stepped back out of, too
             return false
+        } finally {
+            memory.undoLog = null
+            recording = null
         }
+        // A blocked read changed nothing, so there's nothing to undo.
+        if (result != StepResult.Blocked) remember(rec)
         when (result) {
             StepResult.Ok -> {
                 steps++
@@ -128,6 +181,12 @@ class Machine {
 
     private fun finish(s: MachineState, msg: String) { state = s; message = msg }
 
+    private fun remember(rec: StepRecord?) {
+        if (rec == null) return
+        history.addLast(rec)
+        if (history.size > historyLimit) history.removeFirst()
+    }
+
     /** Runs until the program stops or [maxSteps] have run (used by the CLI and tests). */
     fun runToEnd(maxSteps: Long = 50_000_000): MachineState {
         var n = 0L
@@ -151,6 +210,7 @@ class Machine {
                 try {
                     while (n < count && stdin.isNotEmpty()) {
                         val b = stdin.removeFirst()
+                        recording?.stdinTaken?.add(b)
                         memory.write(r[RSI] + n, 1, b.toLong())
                         n++
                         if (b == '\n'.code.toByte()) break

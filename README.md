@@ -30,8 +30,9 @@ build/install/x86sim/bin/x86sim run --example 03_factorial
 - **Built-in assembler**: a two-pass NASM-style assembler with labels, local labels (`.loop`),
   `db/dw/dd/dq`, `resb…resq`, `times`, `equ`, `$`, strings, and expressions. When code is invalid it
   gives errors a beginner can act on, like "operation size not specified" or "two memory operands".
-- **Stepping**: Step (F7), Step Over (F8), Step Out (⇧F8), Run (F5) at adjustable speed, Pause (F6)
-  and Reset. Click the margin (or press F9) to set a breakpoint.
+- **Stepping**: Step (F7), **Step Back (⇧F7 / ⌘[)**, Step Over (F8), Step Out (⇧F8), Run (F5) at adjustable
+  speed, Pause (F6) and Reset. Step Back undoes the last instruction completely (registers, flags,
+  memory, program output and consumed input), up to the last 50,000 steps, including out of a crash. Click the margin (or press F9) to set a breakpoint.
 - **Registers and flags**: all 16 GPRs plus RIP and RFLAGS, shown as signed, unsigned or ASCII. Values
   that changed are highlighted. CF/PF/AF/ZF/SF/DF/OF are shown as lamps.
 - **Stack Memory panel** (View → Stack Memory Panel, ⇧⌘M): a diagram of the stack with one cell per

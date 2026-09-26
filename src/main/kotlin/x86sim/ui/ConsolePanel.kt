@@ -81,6 +81,14 @@ class ConsolePanel : JPanel(BorderLayout()) {
 
     fun clear() { output.text = "" }
 
+    /** Current end of the output; pass it to [rewind] to remove everything printed after it. */
+    fun mark(): Int = output.document.length
+
+    fun rewind(mark: Int) {
+        val d = output.document
+        if (mark < d.length) d.remove(mark, d.length - mark)
+    }
+
     fun setWaiting(waiting: Boolean) {
         hint.text = if (waiting) "Input needed" else "stdin"
         hint.foreground = if (waiting) Theme.warn else Theme.dim

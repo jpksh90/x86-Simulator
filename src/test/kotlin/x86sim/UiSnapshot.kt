@@ -31,11 +31,17 @@ fun main(args: Array<String>) {
         } else w.loadExample(example.removePrefix("CFG:"))
         repeat(steps) { w.step() }
         repeat(args.getOrElse(5) { "0" }.toInt()) { x86sim.ui.Theme.zoomIn() }
+        repeat(args.getOrElse(6) { "0" }.toInt()) { w.stepBack() }
         if (example.startsWith("CFG:")) w.showCfg()
         w.bottomTabs.selectedIndex = tab
         w.validate()
     }
-    Thread.sleep(800)
+    Thread.sleep(300)
+    // Step once more after the window is laid out, as a user would.
+    if (args.getOrElse(7) { "" } == "after") SwingUtilities.invokeAndWait {
+        (java.awt.Frame.getFrames().first { it.isVisible } as MainWindow).step()
+    }
+    Thread.sleep(500)
     SwingUtilities.invokeAndWait {
         java.awt.Frame.getFrames().filter { it.isVisible }.forEachIndexed { i, w ->
             val img = BufferedImage(w.width, w.height, BufferedImage.TYPE_INT_RGB)

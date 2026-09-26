@@ -53,6 +53,7 @@ fun runCli(source: String, trace: Boolean): Int {
         return 2
     }
     val m = Machine()
+    m.keepHistory = false // the terminal runner never steps back
     m.onOutput = { print(it); System.out.flush() }
     m.onNotice = { System.err.println("[sim] $it") }
     m.load(program)
