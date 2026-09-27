@@ -28,13 +28,17 @@ fun main(args: Array<String>) {
             w.breakpoints += 27          // the 'imul rax, rbx' line
             w.speedSlider.value = w.speedSlider.maximum
             w.run()
-        } else w.loadExample(example.removePrefix("CFG:"))
+        } else if (example != "ABOUT") w.loadExample(example.removePrefix("CFG:"))
         repeat(steps) { w.step() }
         repeat(args.getOrElse(5) { "0" }.toInt()) { x86sim.ui.Theme.zoomIn() }
         repeat(args.getOrElse(6) { "0" }.toInt()) { w.stepBack() }
         if (example.startsWith("CFG:")) w.showCfg()
         w.bottomTabs.selectedIndex = tab
         w.validate()
+    }
+    // The About dialog is modal, so open it later and let its own event loop keep running.
+    if (example == "ABOUT") SwingUtilities.invokeLater {
+        (java.awt.Frame.getFrames().first { it.isVisible } as MainWindow).showAbout()
     }
     Thread.sleep(300)
     // Step once more after the window is laid out, as a user would.
@@ -43,7 +47,7 @@ fun main(args: Array<String>) {
     }
     Thread.sleep(500)
     SwingUtilities.invokeAndWait {
-        java.awt.Frame.getFrames().filter { it.isVisible }.forEachIndexed { i, w ->
+        java.awt.Window.getWindows().filter { it.isVisible }.forEachIndexed { i, w ->
             val img = BufferedImage(w.width, w.height, BufferedImage.TYPE_INT_RGB)
             val g = img.createGraphics()
             w.printAll(g)

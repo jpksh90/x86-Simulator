@@ -1,1 +1,1 @@
-rootProject.name = "x86-simulator"
+rootProject.name = "x86Learn"

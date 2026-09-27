@@ -23,11 +23,17 @@ kotlin {
 
 application {
     mainClass.set("x86sim.MainKt")
-    applicationName = "x86sim"
+    applicationName = "x86learn"
+}
+
+tasks.processResources {
+    inputs.property("version", project.version)
+    filesMatching("x86learn.properties") { expand("version" to project.version) }
 }
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty("x86sim.noprefs", "true") // tests never read or write the user's saved settings
 }
 
 tasks.named<JavaExec>("run") {
