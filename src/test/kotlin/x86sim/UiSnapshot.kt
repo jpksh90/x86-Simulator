@@ -28,6 +28,9 @@ fun main(args: Array<String>) {
             w.breakpoints += 27          // the 'imul rax, rbx' line
             w.speedSlider.value = w.speedSlider.maximum
             w.run()
+        } else if (example.startsWith("FILE:")) {
+            w.loadExample("01_hello")
+            w.editor.text = File(example.removePrefix("FILE:")).readText()
         } else if (example != "ABOUT") w.loadExample(example.removePrefix("CFG:"))
         repeat(steps) { w.step() }
         repeat(args.getOrElse(5) { "0" }.toInt()) { x86sim.ui.Theme.zoomIn() }
@@ -52,7 +55,7 @@ fun main(args: Array<String>) {
             val g = img.createGraphics()
             w.printAll(g)
             g.dispose()
-            ImageIO.write(img, "png", File(out, "${example.replace(':', '_')}-$steps-$tab-$i.png"))
+            ImageIO.write(img, "png", File(out, "${example.substringAfterLast('/').replace(':', '_')}-$steps-$tab-$i.png"))
         }
     }
     System.exit(0)

@@ -20,9 +20,34 @@ class StepBackTest {
 
         /** Everything observable: registers, flags, rip, state, steps and all mapped memory. */
         fun snapshot(): List<Any?> = listOf(
-            m.cpu.regs.toList(), m.cpu.rip, m.cpu.rflags, m.cpu.repeating, m.state, m.steps, m.exitCode, out.toString(),
+            m.cpu.regs.toList(), m.cpu.rip, m.cpu.lastRip, m.fault, m.cpu.rflags, m.cpu.repeating, m.state, m.steps, m.exitCode, out.toString(),
             m.memory.mapped.map { r -> Triple(r.bytes.toList(), r.touched.clone(), r.writer.toList()) },
         )
+    }
+
+    @Test fun `lastRip tracks the previous instruction and is undone`() {
+        val m = Rig("_start:\n mov eax, 1\n mov ebx, 2\n ret\n").m
+        assertEquals(-1L, m.cpu.lastRip)
+        m.step(); assertEquals(0x401000L, m.cpu.lastRip)
+        m.step(); assertEquals(0x401004L, m.cpu.lastRip)
+        assertTrue(m.stepBack()); assertEquals(0x401000L, m.cpu.lastRip)
+    }
+
+    @Test fun `a fetch fault replays identically after stepping back`() {
+        val m = Rig("_start:\n mov rdi, 2\n mov rsi, 10\n mov rax, 1\n.loop:\n test rsi, rsi\n jz .done\n imul rax, rdi\n.done:\n").m
+        m.runToEnd()
+        assertEquals(MachineState.FAULTED, m.state)
+        val fault = m.fault; val message = m.message
+        assertTrue(fault != null)
+        assertTrue(m.stepBack())
+        assertEquals(MachineState.PAUSED, m.state)
+        assertEquals(null, m.fault)
+        assertEquals(0x401018L, m.cpu.rip)
+        m.step()
+        assertEquals(fault, m.fault)
+        assertEquals(message, m.message)
+        assertTrue(m.stepBack()); assertTrue(m.stepBack())
+        assertEquals(0x401014L, m.cpu.rip) // back on imul
     }
 
     @Test fun `stepping back to the start restores the exact initial state`() {

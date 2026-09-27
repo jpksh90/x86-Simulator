@@ -32,6 +32,11 @@ The launcher used to be called `x86sim`; update any scripts that call it.
 - **Built-in assembler**: a two-pass NASM-style assembler with labels, local labels (`.loop`),
   `db/dw/dd/dq`, `resb…resq`, `times`, `equ`, `$`, strings, and expressions. When code is invalid it
   gives errors a beginner can act on, like "operation size not specified" or "two memory operands".
+  It also warns (without blocking the run) when execution can run past the last instruction or a
+  label has no instruction after it.
+- **Crash explanations**: when execution leaves the program's code, the segmentation fault says
+  why (ran past the last instruction, jumped to an empty label, `ret` to something that isn't a
+  return address, a bad indirect jump), names the line responsible, highlights it and suggests a fix.
 - **Stepping**: Step (F7), **Step Back (⇧F7 / ⌘[)**, Step Over (F8), Step Out (⇧F8), Run (F5) at adjustable
   speed, Pause (F6) and Reset. Step Back undoes the last instruction completely (registers, flags,
   memory, program output and consumed input), up to the last 50,000 steps, including out of a crash. Click the margin (or press F9) to set a breakpoint.
@@ -96,6 +101,9 @@ address to an exit stub, so a `main` that ends with `ret` exits with the code in
 - Instructions run in a decoded form, not as encoded machine-code bytes. Each instruction takes a
   4-byte slot in `.text`, so addresses, `call`/`ret` and return addresses all work, but code can't be
   read as data or modified at runtime.
+- Execution that leaves the program's code (running past the last instruction, or a bad `ret` or
+  jump target) stops with a segmentation fault, as on real Linux. Running off the end is not treated
+  as an exit: end `_start` with an `exit` syscall or `ret`.
 - There's no floating point/SSE and no linker or C library (`extern` is rejected). Programs talk to
   the "OS" through `syscall`.
 - String instructions are supported only in their 64-bit forms (rcx, rsi, rdi) with a size suffix

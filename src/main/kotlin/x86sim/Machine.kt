@@ -1,8 +1,12 @@
 package x86sim
 
+import x86sim.analysis.FaultExplainer
+import x86sim.analysis.FaultReport
 import x86sim.asm.Program
 import x86sim.cpu.Cpu
 import x86sim.cpu.CpuFault
+import x86sim.cpu.FetchFault
+import x86sim.cpu.Instruction
 import x86sim.cpu.Memory
 import x86sim.cpu.Region
 import x86sim.cpu.Registers.RAX
@@ -41,6 +45,24 @@ class Machine {
     var exitCode: Int? = null
         private set
 
+    /** Why execution left the code, when the machine faulted on an address with no instruction. */
+    var fault: FaultReport? = null
+        private set
+
+    /** The instruction to blame for the current fault: the faulting one, or the one that jumped away. */
+    val faultInstruction: Instruction?
+        get() {
+            if (state != MachineState.FAULTED) return null
+            return cpu.currentInstruction() ?: fault?.line?.let { program?.byLine?.get(it) }
+        }
+
+    /** When paused where there's no instruction, the fault the next step will report. Changes nothing. */
+    fun pendingFetchFault(): FaultReport? {
+        val p = program ?: return null
+        if (!canStep || cpu.currentInstruction() != null) return null
+        return FaultExplainer.explainFetch(p, cpu.rip, p.byAddress[cpu.lastRip])
+    }
+
     /** Receives everything the program writes to stdout/stderr. */
     var onOutput: (String) -> Unit = { print(it) }
 
@@ -54,8 +76,8 @@ class Machine {
 
     /** Everything one step changed, so it can be undone. */
     private class StepRecord(
-        val regs: LongArray, val rip: Long, val flags: Long, val repeating: Boolean,
-        val state: MachineState, val message: String, val steps: Long, val exitCode: Int?,
+        val regs: LongArray, val rip: Long, val lastRip: Long, val flags: Long, val repeating: Boolean,
+        val state: MachineState, val message: String, val fault: FaultReport?, val steps: Long, val exitCode: Int?,
         val outputMark: Int,
     ) {
         val memory = mutableListOf<x86sim.cpu.MemUndo>()
@@ -83,10 +105,12 @@ class Machine {
         memory.undo(r.memory)
         r.regs.copyInto(cpu.regs)
         cpu.rip = r.rip
+        cpu.lastRip = r.lastRip
         cpu.setFlags(r.flags)
         cpu.repeating = r.repeating
         state = r.state
         message = r.message
+        fault = r.fault
         steps = r.steps
         exitCode = r.exitCode
         for (b in r.stdinTaken.asReversed()) stdin.addFirst(b)
@@ -122,6 +146,7 @@ class Machine {
         history.clear()
         steps = 0
         exitCode = null
+        fault = null
         state = MachineState.READY
         message = "Loaded"
     }
@@ -142,14 +167,16 @@ class Machine {
     fun step(): Boolean {
         if (!canStep) return false
         memory.writerTag = cpu.currentInstruction()?.line ?: -1
-        val rec = if (keepHistory) StepRecord(cpu.regs.copyOf(), cpu.rip, cpu.rflags, cpu.repeating, state, message, steps, exitCode, outputMark()) else null
+        val rec = if (keepHistory) StepRecord(cpu.regs.copyOf(), cpu.rip, cpu.lastRip, cpu.rflags, cpu.repeating, state, message, fault, steps, exitCode, outputMark()) else null
         recording = rec
         memory.undoLog = rec?.memory
         val result = try {
             cpu.step()
         } catch (f: CpuFault) {
             state = MachineState.FAULTED
-            message = f.message ?: "fault"
+            val p = program
+            fault = if (f is FetchFault && p != null) FaultExplainer.explainFetch(p, f.rip, p.byAddress[cpu.lastRip]) else null
+            message = fault?.headline ?: f.message ?: "fault"
             remember(rec) // a crash can be stepped back out of, too
             return false
         } finally {

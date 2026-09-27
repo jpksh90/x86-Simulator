@@ -36,6 +36,9 @@ class AsmEditor : JTextPane() {
         set(v) { field = v; repaint() }
     var errorLines: Set<Int> = emptySet()
         set(v) { field = v; repaint() }
+    /** 0-based line blamed for the current crash, or -1. */
+    var faultLine = -1
+        set(v) { field = v; repaint() }
 
     var onEdited: () -> Unit = {}
     private var highlightPending = false
@@ -121,6 +124,7 @@ class AsmEditor : JTextPane() {
         g.color = background
         g.fillRect(0, 0, width, height)
         for (l in errorLines) lineTop(l)?.let { g.color = Theme.errorLine; g.fillRect(0, it.y, width, it.height) }
+        if (faultLine >= 0) lineTop(faultLine)?.let { g.color = Theme.errorLine; g.fillRect(0, it.y, width, it.height) }
         if (currentLine >= 0) lineTop(currentLine)?.let { g.color = Theme.currentLine; g.fillRect(0, it.y, width, it.height) }
         super.paintComponent(g)
     }
@@ -273,7 +277,11 @@ class Gutter(private val editor: AsmEditor, private val breakpoints: MutableSet<
                 g.fillPolygon(xs, ys, 3)
             }
             val s = (line + 1).toString()
-            g.color = if (line == editor.currentLine) Theme.gutterFgActive else Theme.gutterFg
+            g.color = when (line) {
+                editor.currentLine -> Theme.gutterFgActive
+                editor.faultLine -> Theme.bad
+                else -> Theme.gutterFg
+            }
             g.drawString(s, width - 6 - fm.stringWidth(s), r.y + fm.ascent + (r.height - fm.height) / 2)
         }
     }

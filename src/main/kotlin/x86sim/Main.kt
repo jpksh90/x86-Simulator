@@ -2,6 +2,7 @@ package x86sim
 
 import java.io.File
 import kotlin.system.exitProcess
+import x86sim.analysis.ProgramLint
 import x86sim.asm.Assembler
 import x86sim.asm.AssemblyException
 import x86sim.cpu.Registers
@@ -53,6 +54,7 @@ fun runCli(source: String, trace: Boolean): Int {
         e.errors.forEach { System.err.println("error: $it") }
         return 2
     }
+    ProgramLint.warnings(program).forEach { System.err.println("warning: $it") }
     val m = Machine()
     m.keepHistory = false // the terminal runner never steps back
     m.onOutput = { print(it); System.out.flush() }
@@ -71,5 +73,6 @@ fun runCli(source: String, trace: Boolean): Int {
         break
     }
     System.err.println("[sim] ${m.message} (${m.steps} instructions)")
+    m.fault?.let { System.err.println("[sim] hint: ${it.hint}") }
     return m.exitCode ?: if (m.state == MachineState.FAULTED) 139 else 0
 }

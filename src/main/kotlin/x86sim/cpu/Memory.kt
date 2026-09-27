@@ -1,6 +1,9 @@
 package x86sim.cpu
 
-class CpuFault(message: String) : RuntimeException(message)
+open class CpuFault(message: String) : RuntimeException(message)
+
+/** Execution reached [rip], where there is no instruction. */
+class FetchFault(val rip: Long) : CpuFault("Segmentation fault: RIP=0x%x does not point to an instruction".format(rip))
 
 /** What one memory write overwrote, so it can be undone (see [Memory.undoLog]). */
 class MemUndo(

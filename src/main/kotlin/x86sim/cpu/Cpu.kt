@@ -31,11 +31,14 @@ class Cpu(val memory: Memory) {
     /** True right after a step that ran one iteration of a rep-prefixed instruction without finishing it. */
     var repeating = false
 
+    /** Address of the last instruction that completed a step, or -1 before the first one. */
+    var lastRip = -1L
+
     var code: Map<Long, Instruction> = emptyMap()
     var syscallHandler: SyscallHandler = SyscallHandler { StepResult.Halt("syscall not supported") }
 
     fun reset() {
-        regs.fill(0); rip = 0; repeating = false
+        regs.fill(0); rip = 0; repeating = false; lastRip = -1
         cf = false; pf = false; af = false; zf = false; sf = false; of = false; df = false
     }
 
@@ -173,8 +176,13 @@ class Cpu(val memory: Memory) {
     // ---- execution -------------------------------------------------------------------
 
     fun step(): StepResult {
-        val ins = code[rip] ?: throw CpuFault(
-            "Segmentation fault: RIP=0x%x does not point to an instruction".format(rip))
+        val ins = code[rip] ?: throw FetchFault(rip)
+        val r = execute(ins)
+        if (r != StepResult.Blocked) lastRip = ins.address
+        return r
+    }
+
+    private fun execute(ins: Instruction): StepResult {
         repeating = false
         val next = rip + ins.size
         val ops = ins.operands
