@@ -25,12 +25,12 @@ object Examples {
             ?: error("missing example $id")
 }
 
-private const val USAGE = """x86-64 simulator
+internal val USAGE = """${AppInfo.NAME}: ${AppInfo.TAGLINE.replaceFirstChar { it.lowercase() }.removeSuffix(".")}
 
 Usage:
-  x86sim                         open the visual simulator
-  x86sim run <file.asm> [--trace] assemble and run in the terminal
-  x86sim run --example <name>     run a built-in example (e.g. 01_hello)
+  ${AppInfo.COMMAND}                          open the visual simulator
+  ${AppInfo.COMMAND} run <file.asm> [--trace] assemble and run in the terminal
+  ${AppInfo.COMMAND} run --example <name>     run a built-in example (e.g. 01_hello)
 """
 
 fun main(args: Array<String>) {

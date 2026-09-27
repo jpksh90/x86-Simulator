@@ -1,5 +1,6 @@
 package x86sim.ui
 
+import com.formdev.flatlaf.util.UIScale
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
@@ -42,6 +43,7 @@ import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.UIManager
+import x86sim.AppInfo
 import x86sim.Examples
 import x86sim.Machine
 import x86sim.MachineState
@@ -131,7 +133,7 @@ class MainWindow : JFrame() {
     }
 
     init {
-        title = "x86-64 Simulator"
+        title = AppInfo.NAME
         rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
         defaultCloseOperation = DO_NOTHING_ON_CLOSE
         addWindowListener(object : WindowAdapter() {
@@ -376,15 +378,12 @@ class MainWindow : JFrame() {
         })
         add(JMenu("Help").apply {
             add(JMenuItem("Instruction Reference").apply { addActionListener { bottomTabs.selectedIndex = 3 } })
-            add(JMenuItem("About").apply {
-                addActionListener {
-                    JOptionPane.showMessageDialog(this@MainWindow,
-                        "x86-64 Simulator\nLearn assembly by stepping through it.",
-                        "About", JOptionPane.INFORMATION_MESSAGE)
-                }
-            })
+            add(JMenuItem("About ${AppInfo.NAME}").apply { addActionListener { showAbout() } })
         })
     }
+
+    internal fun showAbout() = JOptionPane.showMessageDialog(this, JLabel(AppInfo.aboutHtml(UIScale.scale(360))),
+        "About ${AppInfo.NAME}", JOptionPane.INFORMATION_MESSAGE)
 
     private fun item(name: String, key: Int, extra: Int = 0, body: () -> Unit) = JMenuItem(name).apply {
         accelerator = KeyStroke.getKeyStroke(key, menuKey or extra)
@@ -484,7 +483,7 @@ class MainWindow : JFrame() {
     }
 
     private fun updateTitle() {
-        title = "x86-64 Simulator — $docName" + if (unsaved) " •" else ""
+        title = "${AppInfo.NAME} — $docName" + if (unsaved) " •" else ""
     }
 
     // ---------------- assembling & running ----------------
@@ -795,7 +794,7 @@ _start:
 
         fun launch() {
             System.setProperty("apple.laf.useScreenMenuBar", "true")
-            System.setProperty("apple.awt.application.name", "x86-64 Simulator")
+            System.setProperty("apple.awt.application.name", AppInfo.NAME)
             System.setProperty("awt.useSystemAAFontSettings", "on")
             SwingUtilities.invokeLater {
                 Theme.install()

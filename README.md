@@ -1,6 +1,6 @@
-# x86-64 Simulator
+# x86Learn
 
-An educational, visual simulator for **x86-64 assembly** (NASM syntax), written in Kotlin with a Swing UI.
+x86Learn is an educational, visual simulator for **x86-64 assembly** (NASM syntax), written in Kotlin with a Swing UI.
 Write a program, then step through it one instruction at a time. As you go you can watch the registers,
 flags, stack and memory change.
 
@@ -16,10 +16,12 @@ Or build a launcher once and use it:
 
 ```bash
 ./gradlew installDist
-build/install/x86sim/bin/x86sim                               # GUI
-build/install/x86sim/bin/x86sim run program.asm [--trace]     # headless, in the terminal
-build/install/x86sim/bin/x86sim run --example 03_factorial
+build/install/x86learn/bin/x86learn                               # GUI
+build/install/x86learn/bin/x86learn run program.asm [--trace]     # headless, in the terminal
+build/install/x86learn/bin/x86learn run --example 03_factorial
 ```
+
+The launcher used to be called `x86sim`; update any scripts that call it.
 
 ## Features
 

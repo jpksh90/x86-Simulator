@@ -24,6 +24,7 @@ import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.SwingUtilities
 import javax.swing.UIManager
+import x86sim.AppInfo
 
 /** All colours the UI uses, so the whole app can switch between a dark and a light look. */
 class Palette(
@@ -85,9 +86,24 @@ object Theme {
         private set
     val isDark get() = p.dark
 
-    /** Saved theme and zoom. Disabled with -Dx86sim.noprefs (used by the screenshot harness). */
+    /**
+     * Saved theme and zoom, under 'x86learn' (copied once from the old 'x86sim' node).
+     * Disabled with -Dx86sim.noprefs (used by the screenshot harness).
+     */
     private val prefs: Preferences? = if (System.getProperty("x86sim.noprefs") != null) null
-        else try { Preferences.userRoot().node("x86sim") } catch (_: Exception) { null }
+        else try {
+            Preferences.userRoot().node(AppInfo.COMMAND).also { new ->
+                val root = Preferences.userRoot()
+                migratePrefs(if (root.nodeExists("x86sim")) root.node("x86sim") else null, new)
+            }
+        } catch (_: Exception) { null }
+
+    /** Copies theme and zoom from the pre-rename settings, unless settings were already saved under the new name. */
+    internal fun migratePrefs(from: Preferences?, to: Preferences) {
+        if (from == null || to.keys().isNotEmpty()) return
+        for (key in listOf("theme", "zoom")) from.get(key, null)?.let { to.put(key, it) }
+        to.flush()
+    }
     private val listeners = mutableListOf<() -> Unit>()
 
     /** Registers code that re-applies colours set at construction time. Runs once immediately. */
