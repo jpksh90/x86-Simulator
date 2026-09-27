@@ -33,6 +33,8 @@ build/install/x86sim/bin/x86sim run --example 03_factorial
 - **Stepping**: Step (F7), **Step Back (⇧F7 / ⌘[)**, Step Over (F8), Step Out (⇧F8), Run (F5) at adjustable
   speed, Pause (F6) and Reset. Step Back undoes the last instruction completely (registers, flags,
   memory, program output and consumed input), up to the last 50,000 steps, including out of a crash. Click the margin (or press F9) to set a breakpoint.
+  On a `rep` string instruction, Step runs one iteration (rcx counts down and the line stays put),
+  Step Back undoes one iteration, and Step Over finishes the whole repeat.
 - **Registers and flags**: all 16 GPRs plus RIP and RFLAGS, shown as signed, unsigned or ASCII. Values
   that changed are highlighted. CF/PF/AF/ZF/SF/DF/OF are shown as lamps.
 - **Stack Memory panel** (View → Stack Memory Panel, ⇧⌘M): a diagram of the stack with one cell per
@@ -59,15 +61,16 @@ build/install/x86sim/bin/x86sim run --example 03_factorial
   divide-by-zero or quotient overflow.
 - **Help while you work**: hover an instruction or register for a description. The status bar explains
   the next instruction, and the Reference tab lists everything that's supported.
-- 8 example programs: hello world, loops, recursion, keyboard input, arrays, bubble sort, a tour of
-  the flags, and local variables on the stack.
+- 9 example programs: hello world, loops, recursion, keyboard input, arrays, bubble sort, a tour of
+  the flags, local variables on the stack, and string operations (`rep movsb`, `repne scasb`, ...).
 
 ## Supported instructions
 
 `mov movzx movsx movsxd lea xchg` · `add adc sub sbb inc dec neg cmp` · `mul imul div idiv` ·
 `and or xor not test` · `shl sal shr sar rol ror` · `cbw cwde cdqe cwd cdq cqo` ·
 `push pop call ret leave` · `jmp jcc setcc cmovcc loop jrcxz jecxz` · `syscall nop hlt` ·
-`clc stc cmc cld std`
+`clc stc cmc cld std` ·
+`movs stos lods scas cmps` (with a `b`/`w`/`d`/`q` size suffix) · `rep repe/repz repne/repnz`
 
 All 8/16/32/64-bit register forms are supported (`al`, `ah`, `ax`, `eax`, `rax`, `r8b`…`r15`), with
 the real partial-register rules: writing a 32-bit register zeroes the upper half, while 8/16-bit writes
@@ -91,8 +94,10 @@ address to an exit stub, so a `main` that ends with `ret` exits with the code in
 - Instructions run in a decoded form, not as encoded machine-code bytes. Each instruction takes a
   4-byte slot in `.text`, so addresses, `call`/`ret` and return addresses all work, but code can't be
   read as data or modified at runtime.
-- There's no floating point/SSE, no string instructions (`rep movsb` etc.), and no linker or C library
-  (`extern` is rejected). Programs talk to the "OS" through `syscall`.
+- There's no floating point/SSE and no linker or C library (`extern` is rejected). Programs talk to
+  the "OS" through `syscall`.
+- String instructions are supported only in their 64-bit forms (rcx, rsi, rdi) with a size suffix
+  (`movsb`, not `movs byte [rdi], [rsi]`). There's no `ins`/`outs`, and no segment-override or `a32` prefixes.
 
 ## Project layout
 

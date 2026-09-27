@@ -1,5 +1,9 @@
 package x86sim.ui
 
+import x86sim.cpu.Bits
+import x86sim.cpu.RepPrefix
+import x86sim.cpu.StringOp
+
 /** Short, beginner-friendly descriptions of each supported instruction. */
 object Docs {
     data class Entry(val syntax: String, val description: String, val flags: String)
@@ -64,6 +68,22 @@ object Docs {
         "std" to Entry("std", "Set the direction flag.", "DF=1"),
     )
 
+    private const val direction = " Pointers move forward when DF=0 and backward when DF=1 (cld/std)."
+
+    /** String instructions and their repeat prefixes, listed separately in the Reference. */
+    val strings: Map<String, Entry> = linkedMapOf(
+        "movs" to Entry("movsb/w/d/q", "Copy one byte/word/dword/qword from [rsi] to [rdi], then advance rsi and rdi by that size.$direction", "none"),
+        "stos" to Entry("stosb/w/d/q", "Store al/ax/eax/rax at [rdi], then advance rdi. 'rep stosb' fills memory (like memset).$direction", "none"),
+        "lods" to Entry("lodsb/w/d/q", "Load [rsi] into al/ax/eax/rax, then advance rsi. Writing eax zeroes the upper half of rax.$direction", "none"),
+        "scas" to Entry("scasb/w/d/q", "Compare al/ax/eax/rax with [rdi] (like cmp), then advance rdi. 'repne scasb' searches for a byte.$direction", "CF OF SF ZF AF PF (like cmp)"),
+        "cmps" to Entry("cmpsb/w/d/q", "Compare [rsi] with [rdi] (like cmp [rsi], [rdi]), then advance both. 'repe cmpsb' compares strings.$direction", "CF OF SF ZF AF PF (like cmp)"),
+        "rep" to Entry("rep movsb", "Repeat the string instruction rcx times (rcx counts down to 0; nothing happens if rcx is 0). On scas/cmps, rep is the same as repe.", "none"),
+        "repe" to Entry("repe cmpsb", "Repeat while rcx ≠ 0 and the last comparison was equal (ZF=1). Also written repz.", "none"),
+        "repz" to Entry("repz cmpsb", "Same as repe: repeat while rcx ≠ 0 and ZF=1.", "none"),
+        "repne" to Entry("repne scasb", "Repeat while rcx ≠ 0 and the last comparison was not equal (ZF=0). Also written repnz.", "none"),
+        "repnz" to Entry("repnz scasb", "Same as repne: repeat while rcx ≠ 0 and ZF=0.", "none"),
+    )
+
     private val conditionNames = mapOf(
         "e" to "equal (ZF=1)", "z" to "zero (ZF=1)", "ne" to "not equal (ZF=0)", "nz" to "not zero (ZF=0)",
         "l" to "less, signed (SF≠OF)", "nge" to "less, signed (SF≠OF)", "le" to "less or equal, signed (ZF=1 or SF≠OF)",
@@ -77,9 +97,38 @@ object Docs {
         "p" to "parity even (PF=1)", "pe" to "parity even (PF=1)", "np" to "parity odd (PF=0)", "po" to "parity odd (PF=0)",
     )
 
+    /** What the next iteration of a string instruction will do, for the status bar ("copy byte [rsi] → [rdi] · 5 left"). */
+    fun stringIteration(op: StringOp, prefix: RepPrefix, rcx: Long, df: Boolean): String {
+        val repeat = prefix != RepPrefix.NONE
+        if (repeat && rcx == 0L) return "rcx = 0: the repeat is skipped"
+        val s = Bits.sizeName(op.size)
+        val acc = when (op.size) { 1 -> "al"; 2 -> "ax"; 4 -> "eax"; else -> "rax" }
+        val what = when (op.family) {
+            StringOp.Family.MOVS -> "copy $s [rsi] → [rdi]"
+            StringOp.Family.STOS -> "store $acc → $s [rdi]"
+            StringOp.Family.LODS -> "load $s [rsi] → $acc"
+            StringOp.Family.SCAS -> "compare $acc with $s [rdi]"
+            StringOp.Family.CMPS -> "compare $s [rsi] with $s [rdi]"
+        }
+        val pointers = listOfNotNull("rsi".takeIf { op.usesRsi }, "rdi".takeIf { op.usesRdi }).joinToString("/")
+        val then = when {
+            repeat && op.setsFlags && prefix == RepPrefix.REPNE -> " · stops when equal (ZF=1) or rcx = 0"
+            repeat && op.setsFlags -> " · stops when different (ZF=0) or rcx = 0"
+            else -> ", then $pointers ${if (df) "-=" else "+="} ${op.size}"
+        }
+        val left = if (repeat && java.lang.Long.compareUnsigned(rcx, 1L shl 32) < 0) " · $rcx left" else ""
+        return what + then + left
+    }
+
     fun lookup(mnemonic: String): Entry? {
         val m = mnemonic.lowercase()
         instructions[m]?.let { return it }
+        strings[m]?.let { return it }
+        StringOp.of(m)?.let { op ->
+            val base = strings.getValue(m.dropLast(1))
+            val size = Bits.sizeName(op.size)
+            return Entry(m, "${size.replaceFirstChar { it.uppercase() }} version: " + base.description, base.flags)
+        }
         for ((prefix, generic) in listOf("cmov" to "cmovcc", "set" to "setcc", "j" to "jcc")) {
             if (m.startsWith(prefix)) {
                 val cond = conditionNames[m.removePrefix(prefix)] ?: continue
@@ -135,6 +184,12 @@ object Docs {
         append("<html><body style='padding:10px'>")
         append("<h2>Supported instructions</h2><table cellpadding=3>")
         for ((_, e) in instructions) {
+            append("<tr><td valign=top><code><b>${esc(e.syntax)}</b></code></td><td>${esc(e.description)}")
+            if (e.flags != "none") append(" <font color='$dim'>${e.flags}</font>")
+            append("</td></tr>")
+        }
+        append("</table><h2>String instructions</h2><table cellpadding=3>")
+        for ((_, e) in strings) {
             append("<tr><td valign=top><code><b>${esc(e.syntax)}</b></code></td><td>${esc(e.description)}")
             if (e.flags != "none") append(" <font color='$dim'>${e.flags}</font>")
             append("</td></tr>")

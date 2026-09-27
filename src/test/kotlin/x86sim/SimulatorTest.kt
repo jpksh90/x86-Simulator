@@ -6,6 +6,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import x86sim.asm.Assembler
 import x86sim.asm.AssemblyException
+import x86sim.cpu.RepPrefix
 import x86sim.cpu.Registers
 
 class SimulatorTest {
@@ -43,6 +44,8 @@ class SimulatorTest {
         assertEquals(fib.joinToString("") { "$it\n" }, run(Examples.load("05_fibonacci")).out)
         assertEquals(listOf(3, 11, 12, 22, 25, 47, 64, 90).joinToString("") { "$it\n" }, run(Examples.load("06_bubble_sort")).out)
         assertEquals("60\n", run(Examples.load("08_locals")).out)
+        assertEquals("copy: Hello, strings!\nzeroed: yes\nlength: 14\ncompare: first difference at index 2\n",
+            run(Examples.load("09_strings")).out)
         for ((id, _) in Examples.names) {
             val r = run(Examples.load(id), "x\n")
             assertEquals(MachineState.EXITED, r.m.state, "$id: ${r.m.message}")
@@ -265,5 +268,57 @@ class SimulatorTest {
         assertTrue(errors("section .data\nneg dd 1\n_start:\n nop\n").first().message.contains("instruction name"))
         val many = errors("_start:\n foo\n mov rax\n bar\n")
         assertEquals(listOf(1, 2, 3), many.map { it.line })
+    }
+
+    // ---------------- string instructions: assembler ----------------
+
+    @Test fun `string instructions and rep prefixes assemble`() {
+        fun one(line: String) = Assembler.assemble("f:\n$line\n hlt\n").instructions.first()
+        val cases = listOf(
+            "movsb" to ("movsb" to RepPrefix.NONE),
+            "rep movsq" to ("movsq" to RepPrefix.REP),
+            "REPNE SCASB" to ("scasb" to RepPrefix.REPNE),
+            ".cmp: repe cmpsb" to ("cmpsb" to RepPrefix.REPE),
+            "repz cmpsw" to ("cmpsw" to RepPrefix.REPE),
+            "rep scasb" to ("scasb" to RepPrefix.REP),
+            "repne stosb" to ("stosb" to RepPrefix.REPNE),
+            "rep lodsb ; load" to ("lodsb" to RepPrefix.REP),
+        )
+        for ((line, expected) in cases) {
+            val i = one(line)
+            assertEquals(expected, i.mnemonic to i.prefix, line)
+            assertTrue(i.operands.isEmpty(), line)
+        }
+        for ((id, _) in Examples.names.filter { it.first != "09_strings" }) // programs written before string instructions
+            assertTrue(Assembler.assemble(Examples.load(id)).instructions.all { it.prefix == RepPrefix.NONE }, id)
+    }
+
+    @Test fun `misused string instructions and prefixes give helpful errors`() {
+        fun check(src: String, line: Int, vararg phrases: String) {
+            val e = errors(src).single()
+            assertEquals(line, e.line, src)
+            for (p in phrases) assertTrue(e.message.contains(p), "'$src': expected '$p' in '${e.message}'")
+        }
+        val s = "_start:\n"
+        check("$s rep\n", 1, "'rep' needs a string instruction after it", "rep movsb")
+        check("$s rep add rax, 1\n", 1, "only works with string instructions", "'add'")
+        check("$s repne jmp foo\n", 1, "only works with string instructions", "'jmp'")
+        check("$s rep rep movsb\n", 1, "only works with string instructions", "'rep'")
+        for (bare in listOf("movs byte [rdi], [rsi]", "stos", "lods", "scas", "cmps"))
+            check("$s $bare\n", 1, "write the size in the name")
+        check("$s movs byte [rdi], [rsi]\n", 1, "'movsb', 'movsw', 'movsd' or 'movsq'")
+        for (bad in listOf("stosb al", "lodsq rax", "movsb [rdi], [rsi]")) check("$s $bad\n", 1, "takes no operands")
+        for (sse in listOf("movsd xmm0, [rsi]", "cmpsd xmm1, xmm2, 0"))
+            check("$s $sse\n", 1, "SSE floating-point", "isn't supported", "takes no operands")
+        for (io in listOf("insb", "insw", "insd", "outsb", "outsw", "outsd", "rep outsb"))
+            check("$s $io\n", 1, "port I/O", "privileged", "not supported")
+        for (a in listOf("a32 rep movsb", "a32 movsb"))
+            check("$s $a\n", 1, "address-size override", "isn't supported", "rcx, rsi and rdi")
+        for (seg in listOf("fs movsb", "gs rep stosb")) check("$s $seg\n", 1, "segment overrides", "aren't supported")
+        check("$s nop\nrep: nop\n", 2, "is an instruction name and can't be a label")
+        check("$s nop\nmovsb: nop\n", 2, "is an instruction name and can't be a label")
+        check("section .data\n rep movsb\nsection .text\n$s nop\n", 1, "outside section .text")
+        // a data label that happens to be a segment register name still works
+        Assembler.assemble("section .data\ncs db 1\nsection .text\n$s nop\n")
     }
 }

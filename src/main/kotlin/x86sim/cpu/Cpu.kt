@@ -6,6 +6,8 @@ import x86sim.cpu.Registers.RCX
 import x86sim.cpu.Registers.RDX
 import x86sim.cpu.Registers.RSP
 import x86sim.cpu.Registers.RBP
+import x86sim.cpu.Registers.RDI
+import x86sim.cpu.Registers.RSI
 
 sealed interface StepResult {
     data object Ok : StepResult
@@ -26,11 +28,14 @@ class Cpu(val memory: Memory) {
     var cf = false; var pf = false; var af = false
     var zf = false; var sf = false; var of = false; var df = false
 
+    /** True right after a step that ran one iteration of a rep-prefixed instruction without finishing it. */
+    var repeating = false
+
     var code: Map<Long, Instruction> = emptyMap()
     var syscallHandler: SyscallHandler = SyscallHandler { StepResult.Halt("syscall not supported") }
 
     fun reset() {
-        regs.fill(0); rip = 0
+        regs.fill(0); rip = 0; repeating = false
         cf = false; pf = false; af = false; zf = false; sf = false; of = false; df = false
     }
 
@@ -170,10 +175,12 @@ class Cpu(val memory: Memory) {
     fun step(): StepResult {
         val ins = code[rip] ?: throw CpuFault(
             "Segmentation fault: RIP=0x%x does not point to an instruction".format(rip))
+        repeating = false
         val next = rip + ins.size
         val ops = ins.operands
         var target: Long? = null
         val m = ins.mnemonic
+        StringOp.of(m)?.let { return stringStep(ins, it, next) }
 
         fun dst() = ops[0]
         fun src() = ops[1]
@@ -261,6 +268,48 @@ class Cpu(val memory: Memory) {
             }
         }
         rip = target ?: next
+        return StepResult.Ok
+    }
+
+    /**
+     * One iteration of a string instruction. With a repeat prefix, rip stays on the instruction
+     * until the repeat ends, so every iteration is its own step (as when single-stepping real hardware).
+     */
+    private fun stringStep(ins: Instruction, op: StringOp, next: Long): StepResult {
+        val repeat = ins.prefix != RepPrefix.NONE
+        if (repeat && regs[RCX] == 0L) { rip = next; return StepResult.Ok }
+        val n = op.size
+        val d = if (df) -n.toLong() else n.toLong()
+        // All memory accesses come before any register update, so a fault leaves the
+        // registers as they were after the last completed iteration.
+        when (op.family) {
+            StringOp.Family.MOVS -> {
+                memory.write(regs[RDI], n, memory.read(regs[RSI], n))
+                regs[RSI] += d; regs[RDI] += d
+            }
+            StringOp.Family.STOS -> {
+                memory.write(regs[RDI], n, getPart(RAX, n))
+                regs[RDI] += d
+            }
+            StringOp.Family.LODS -> {
+                setPart(RAX, n, memory.read(regs[RSI], n))
+                regs[RSI] += d
+            }
+            StringOp.Family.SCAS -> {
+                sub(getPart(RAX, n), memory.read(regs[RDI], n), 0, n)
+                regs[RDI] += d
+            }
+            StringOp.Family.CMPS -> {
+                val a = memory.read(regs[RSI], n)
+                sub(a, memory.read(regs[RDI], n), 0, n)
+                regs[RSI] += d; regs[RDI] += d
+            }
+        }
+        if (!repeat) { rip = next; return StepResult.Ok }
+        regs[RCX] -= 1
+        val done = regs[RCX] == 0L || op.stopsAfter(ins.prefix, zf)
+        rip = if (done) next else ins.address
+        repeating = !done
         return StepResult.Ok
     }
 

@@ -205,7 +205,7 @@ class AsmEditor : JTextPane() {
                         if (st != null) doc.setCharacterAttributes(start, g[3]!!.value.length, st, true)
                     }
                 }
-                if (g[1] == null) firstWord = g[4] != null && firstWord
+                if (g[1] == null) firstWord = (g[4] != null || g[3]?.value?.lowercase() in Assembler.PREFIXES) && firstWord
             }
             lineStart += line.length + 1
         }

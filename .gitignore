@@ -4,3 +4,7 @@ build/
 *.iml
 .kotlin/
 .DS_Store
+out/
+*.class
+*.log
+*.swp

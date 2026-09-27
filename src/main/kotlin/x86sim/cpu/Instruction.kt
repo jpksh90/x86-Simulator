@@ -30,6 +30,8 @@ data class Instruction(
     val address: Long,
     val line: Int, // 0-based source line
     val source: String,
+    /** Repeat prefix; only ever set on string instructions. */
+    val prefix: RepPrefix = RepPrefix.NONE,
 ) {
     val size: Int get() = INSTRUCTION_SLOT
 
