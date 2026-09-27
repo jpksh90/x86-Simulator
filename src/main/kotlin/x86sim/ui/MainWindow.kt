@@ -47,6 +47,8 @@ import x86sim.AppInfo
 import x86sim.Examples
 import x86sim.Machine
 import x86sim.MachineState
+import x86sim.analysis.FaultKind
+import x86sim.analysis.ProgramLint
 import x86sim.asm.AsmError
 import x86sim.asm.Assembler
 import x86sim.asm.AssemblyException
@@ -291,8 +293,9 @@ class MainWindow : JFrame() {
             Theme.onChange { font = Theme.mono }
             cellRenderer = javax.swing.DefaultListCellRenderer().let { base ->
                 javax.swing.ListCellRenderer<AsmError> { list, value, index, sel, focus ->
-                    (base.getListCellRendererComponent(list, "×  L${value.line + 1}  ${value.message}", index, sel, focus) as JLabel).apply {
-                        if (!sel) foreground = Theme.bad
+                    val mark = if (value.warning) "⚠" else "×"
+                    (base.getListCellRendererComponent(list, "$mark  L${value.line + 1}  ${value.message}", index, sel, focus) as JLabel).apply {
+                        if (!sel) foreground = if (value.warning) Theme.warn else Theme.bad
                         border = BorderFactory.createEmptyBorder(4, 10, 4, 10)
                     }
                 }
@@ -323,9 +326,10 @@ class MainWindow : JFrame() {
                     BorderFactory.createEmptyBorder(5, 10, 5, 12))
                 stepsLabel.foreground = Theme.dim
             }
-            val left = JPanel(FlowLayout(FlowLayout.LEFT, 10, 0)).apply {
+            // BorderLayout lets a long message shrink to "…" instead of being cut off mid-word.
+            val left = JPanel(BorderLayout(10, 0)).apply {
                 isOpaque = false
-                add(stateLabel); add(messageLabel)
+                add(stateLabel, BorderLayout.WEST); add(messageLabel, BorderLayout.CENTER)
             }
             add(left, BorderLayout.CENTER)
             add(stepsLabel.apply { Theme.onChange { font = Theme.monoSmall } }, BorderLayout.EAST)
@@ -493,7 +497,9 @@ class MainWindow : JFrame() {
         problems.clear()
         return try {
             val p = Assembler.assemble(editor.text)
+            val warnings = ProgramLint.warnings(p)
             machine.load(p)
+            warnings.forEach { problems.addElement(it) }
             stale = false
             editor.errorLines = emptySet()
             gutter.instructionLines = p.byLine.keys
@@ -503,9 +509,11 @@ class MainWindow : JFrame() {
             memory.onProgramLoaded()
             resumeAfterInput = false; stepAfterInput = false
             if (bottomTabs.selectedIndex == 2) bottomTabs.selectedIndex = 0
-            bottomTabs.setTitleAt(2, "Problems")
+            val warned = if (warnings.isEmpty()) "" else " (${plural(warnings.size, "warning")})"
+            bottomTabs.setTitleAt(2, "Problems$warned")
             refresh(null)
-            message("Built · ${p.instructions.size} instructions", Theme.ok)
+            message("Built · ${p.instructions.size} instructions" + if (warnings.isEmpty()) "" else " · ${plural(warnings.size, "warning")}",
+                if (warnings.isEmpty()) Theme.ok else Theme.warn)
             true
         } catch (e: AssemblyException) {
             e.errors.forEach { problems.addElement(it) }
@@ -660,7 +668,8 @@ class MainWindow : JFrame() {
             MachineState.EXITED, MachineState.HALTED -> console.system(machine.message)
             MachineState.FAULTED -> {
                 console.error(machine.message)
-                machine.cpu.currentInstruction()?.let { console.error("L${it.line + 1}: ${it.source.substringBefore(';').trim()}") }
+                machine.faultInstruction?.let { console.error("L${it.line + 1}: ${it.source.substringBefore(';').trim()}") }
+                machine.fault?.let { console.error(it.hint) }
             }
             else -> {}
         }
@@ -718,6 +727,8 @@ class MainWindow : JFrame() {
         val ins = if (machine.program != null && !machine.isFinished) machine.cpu.currentInstruction() else null
         editor.currentLine = ins?.line ?: -1
         if (ins != null) editor.scrollToLine(ins.line)
+        editor.faultLine = machine.faultInstruction?.line ?: -1
+        if (editor.faultLine >= 0) editor.scrollToLine(editor.faultLine)
         gutter.repaint()
         cfgWindow?.takeIf { it.isVisible }?.refresh()
 
@@ -728,6 +739,10 @@ class MainWindow : JFrame() {
                 "<html><font color='${Theme.hex(Theme.dim)}'>NEXT</font>&nbsp;&nbsp;<b>${escape(ins.source.substringBefore(';').trim())}</b>" +
                     (doc?.let { "&nbsp;&nbsp;<font color='${Theme.hex(Theme.dim)}'>$it</font>" } ?: "") +
                     syscallHint(ins.mnemonic) + "</html>"
+            }
+            machine.pendingFetchFault() != null -> machine.pendingFetchFault()!!.let {
+                "<html><font color='${Theme.hex(Theme.dim)}'>NEXT</font>&nbsp;&nbsp;<font color='${Theme.hex(Theme.bad)}'>" +
+                    escape("no instruction at RIP=0x%x — the next step will fault: ${faultPhrase(it.kind)}".format(it.rip)) + "</font></html>"
             }
             machine.isFinished -> "Finished"
             else -> " "
@@ -759,10 +774,22 @@ class MainWindow : JFrame() {
         return escape(if (first.length > 44) first.take(42).trimEnd() + "…" else first)
     }
 
+    private fun plural(n: Int, word: String) = "$n $word" + if (n == 1) "" else "s"
+
+    private fun faultPhrase(k: FaultKind) = when (k) {
+        FaultKind.RAN_PAST_END -> "ran past the last instruction"
+        FaultKind.EMPTY_LABEL -> "label with no instruction"
+        FaultKind.BAD_RETURN -> "not a return address"
+        FaultKind.BAD_TARGET -> "not an instruction"
+        FaultKind.MISALIGNED -> "middle of an instruction"
+        FaultKind.ENTRY -> "empty _start"
+    }
+
     private fun escape(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     private fun message(text: String, color: Color = Theme.dim) {
         messageLabel.text = text
+        messageLabel.toolTipText = text.takeIf { it.isNotBlank() }
         messageLabel.foreground = color
     }
 

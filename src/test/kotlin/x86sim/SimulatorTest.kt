@@ -248,7 +248,7 @@ class SimulatorTest {
         val ro = run("section .rodata\nk dq 1\nsection .text\n_start:\n mov qword [k], 2\n")
         assertEquals(MachineState.FAULTED, ro.m.state)
         assertTrue(ro.m.message.contains("read-only"))
-        assertTrue(run("_start:\n push 5\n ret\n").m.message.contains("does not point to an instruction"))
+        assertTrue(run("_start:\n push 5\n ret\n").m.message.contains("which is not a return address"))
     }
 
     // ---------------- assembler errors ----------------

@@ -11,7 +11,7 @@ import x86sim.cpu.Registers
 import x86sim.cpu.RepPrefix
 import x86sim.cpu.StringOp
 
-data class AsmError(val line: Int, val message: String) {
+data class AsmError(val line: Int, val message: String, val warning: Boolean = false) {
     override fun toString() = "line ${line + 1}: $message"
 }
 
@@ -29,6 +29,8 @@ class Program(
     val symbols: Map<String, Long>,
     val sections: List<Section>,
     val entry: Long,
+    /** Source line (0-based) where each label is defined. */
+    val labelLines: Map<String, Int> = emptyMap(),
 ) {
     val byAddress: Map<Long, Instruction> = instructions.associateBy { it.address }
     val byLine: Map<Int, Instruction> = instructions.associateBy { it.line }
@@ -69,6 +71,7 @@ class Assembler {
     private class Pending(val line: Int, val section: Section, val address: Long, val op: String, val args: String, val times: Long, val lastLabel: String?, val prefix: RepPrefix = RepPrefix.NONE)
 
     private val errors = mutableListOf<AsmError>()
+    private val labelLines = mutableMapOf<String, Int>()
     private val symbols = LinkedHashMap<String, Long>()
 
     private val text = Section(".text", Program.TEXT_BASE, writable = false, bss = false)
@@ -234,7 +237,7 @@ class Assembler {
         if (errors.isNotEmpty()) throw AssemblyException(errors.sortedBy { it.line })
 
         val entry = symbols["_start"] ?: symbols["main"] ?: instructions.first().address
-        return Program(instructions, symbols, listOf(text, rodata, data, bss), entry)
+        return Program(instructions, symbols, listOf(text, rodata, data, bss), entry, labelLines)
     }
 
     // ---------------- helpers: lexical ----------------
@@ -268,6 +271,7 @@ class Assembler {
         if (Registers.isRegister(name)) throw AsmFail("'$name' is a register name and can't be a label")
         if (name.lowercase() in MNEMONICS || name.lowercase() in PREFIXES) throw AsmFail("'$name' is an instruction name and can't be a label")
         if (name in symbols) throw AsmFail("label '$name' is defined more than once")
+        labelLines[name] = ln
         symbols[name] = section.start + if (section == text) section.size else section.length
     }
 
