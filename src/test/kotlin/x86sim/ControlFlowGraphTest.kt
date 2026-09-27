@@ -46,4 +46,14 @@ class ControlFlowGraphTest {
         assertEquals("(unreachable code)", g.functions.last().name)
         assertEquals("nop", g.functions.last().blocks.single().instructions.single().mnemonic)
     }
+
+    @Test fun `lods clobbers rax for exit-syscall detection`() {
+        val g = cfg("_start:\n mov eax, 60\n lodsb\n syscall\n hlt\n")
+        assertTrue(g.blocks.none { it.exit == "exit" })
+    }
+
+    @Test fun `a rep instruction stays inside its basic block`() {
+        val g = cfg("_start:\n mov ecx, 3\n rep movsb\n hlt\n")
+        assertEquals(1, g.blocks.size)
+    }
 }

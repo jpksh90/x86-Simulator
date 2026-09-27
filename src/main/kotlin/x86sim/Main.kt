@@ -17,6 +17,7 @@ object Examples {
         "06_bubble_sort" to "Bubble sort",
         "07_flags" to "Flags tour",
         "08_locals" to "Stack: local variables",
+        "09_strings" to "Strings: rep movs/stos/scas/cmps",
     )
 
     fun load(id: String): String =

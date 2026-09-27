@@ -49,6 +49,8 @@ import x86sim.asm.AsmError
 import x86sim.asm.Assembler
 import x86sim.asm.AssemblyException
 import x86sim.cpu.Registers
+import x86sim.cpu.RepPrefix
+import x86sim.cpu.StringOp
 
 class MainWindow : JFrame() {
     internal val machine = Machine()
@@ -82,6 +84,9 @@ class MainWindow : JFrame() {
     private var stopWhen: (() -> Boolean)? = null
     private var stopWhenLabel = ""
     private var resumeAfterInput = false
+    /** Run without the speed limit (Step Over a rep instruction); [resumeFullSpeed] survives a pause for input. */
+    private var runFullSpeed = false
+    private var resumeFullSpeed = false
     private var stepAfterInput = false
     private var lastMnemonic = ""
 
@@ -565,6 +570,10 @@ class MainWindow : JFrame() {
     internal fun stepOver() {
         if (running || !prepare()) return
         val ins = machine.cpu.currentInstruction()
+        if (ins != null && ins.prefix != RepPrefix.NONE && StringOp.of(ins.mnemonic) != null) {
+            val a = ins.address
+            return startRun({ machine.cpu.rip != a }, "Stepped over repeat", fullSpeed = true)
+        }
         if (ins?.mnemonic != "call") return step()
         val ret = ins.address + ins.size
         val rsp0 = machine.cpu.regs[Registers.RSP]
@@ -577,8 +586,9 @@ class MainWindow : JFrame() {
         startRun({ lastMnemonic == "ret" && machine.cpu.regs[Registers.RSP] > rsp0 }, "Returned")
     }
 
-    private fun startRun(condition: (() -> Boolean)?, label: String) {
+    private fun startRun(condition: (() -> Boolean)?, label: String, fullSpeed: Boolean = false) {
         if (running || !prepare()) return
+        runFullSpeed = fullSpeed
         stopWhen = condition
         stopWhenLabel = label
         firstStepOfRun = true
@@ -592,19 +602,21 @@ class MainWindow : JFrame() {
     private fun restartTimer() {
         timer?.stop()
         val ips = speeds[speedSlider.value]
-        val delay = if (ips <= 60) 1000 / ips else 15
+        val delay = if (ips <= 60 && !runFullSpeed) 1000 / ips else 15
         timer = Timer(delay) { tick() }.apply { initialDelay = 0; start() }
     }
 
     private fun stopTimer() {
         timer?.stop()
         timer = null
+        runFullSpeed = false
         updateActions()
     }
 
     private fun tick() {
         val ips = speeds[speedSlider.value]
         val budget = when {
+            runFullSpeed -> Int.MAX_VALUE
             ips <= 60 -> 1
             ips == Int.MAX_VALUE -> Int.MAX_VALUE
             else -> ips * 15 / 1000
@@ -617,12 +629,12 @@ class MainWindow : JFrame() {
             val ins = machine.cpu.currentInstruction()
             if (!firstStepOfRun) {
                 if (stopWhen?.invoke() == true) { pause(stopWhenLabel); break }
-                if (ins != null && ins.line in breakpoints) { pause("Breakpoint · L${ins.line + 1}"); break }
+                if (ins != null && ins.line in breakpoints && !machine.cpu.repeating) { pause("Breakpoint · L${ins.line + 1}"); break }
             }
             firstStepOfRun = false
             lastMnemonic = ins?.mnemonic ?: ""
             if (!machine.step()) {
-                if (machine.state == MachineState.WAITING_INPUT) resumeAfterInput = true
+                if (machine.state == MachineState.WAITING_INPUT) { resumeAfterInput = true; resumeFullSpeed = runFullSpeed }
                 stopTimer()
                 afterStop()
                 break
@@ -658,7 +670,7 @@ class MainWindow : JFrame() {
     private fun afterInput() {
         console.setWaiting(false)
         when {
-            resumeAfterInput -> { resumeAfterInput = false; startRun(stopWhen, stopWhenLabel) }
+            resumeAfterInput -> { resumeAfterInput = false; startRun(stopWhen, stopWhenLabel, resumeFullSpeed) }
             stepAfterInput -> { stepAfterInput = false; step() } // finish the read that was waiting
             else -> refresh(null)
         }
@@ -712,7 +724,8 @@ class MainWindow : JFrame() {
 
         nextLabel.text = when {
             ins != null -> {
-                val doc = Docs.lookup(ins.mnemonic)?.let { shortDoc(it.description) }
+                val doc = StringOp.of(ins.mnemonic)?.let { Docs.stringIteration(it, ins.prefix, machine.cpu.regs[Registers.RCX], machine.cpu.df) }
+                    ?: Docs.lookup(ins.mnemonic)?.let { shortDoc(it.description) }
                 "<html><font color='${Theme.hex(Theme.dim)}'>NEXT</font>&nbsp;&nbsp;<b>${escape(ins.source.substringBefore(';').trim())}</b>" +
                     (doc?.let { "&nbsp;&nbsp;<font color='${Theme.hex(Theme.dim)}'>$it</font>" } ?: "") +
                     syscallHint(ins.mnemonic) + "</html>"

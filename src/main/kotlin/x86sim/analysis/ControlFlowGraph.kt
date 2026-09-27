@@ -160,7 +160,8 @@ class ControlFlowGraph(val program: Program) {
 
     companion object {
         /** Instructions that change rax without naming it as their destination operand. */
-        private val IMPLICIT_RAX_WRITERS = setOf("mul", "imul", "div", "idiv", "cbw", "cwde", "cdqe", "xchg", "pop")
+        private val IMPLICIT_RAX_WRITERS = setOf("mul", "imul", "div", "idiv", "cbw", "cwde", "cdqe", "xchg", "pop",
+            "lodsb", "lodsw", "lodsd", "lodsq")
 
         fun isJump(m: String) = m == "jmp" || m in Assembler.LOOPS ||
             (m.startsWith("j") && m.substring(1) in Assembler.CONDITIONS)

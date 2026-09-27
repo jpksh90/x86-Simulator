@@ -8,6 +8,8 @@ import x86sim.cpu.Operand
 import x86sim.cpu.Reg
 import x86sim.cpu.RegOp
 import x86sim.cpu.Registers
+import x86sim.cpu.RepPrefix
+import x86sim.cpu.StringOp
 
 data class AsmError(val line: Int, val message: String) {
     override fun toString() = "line ${line + 1}: $message"
@@ -64,7 +66,7 @@ class Program(
  */
 class Assembler {
 
-    private class Pending(val line: Int, val section: Section, val address: Long, val op: String, val args: String, val times: Long, val lastLabel: String?)
+    private class Pending(val line: Int, val section: Section, val address: Long, val op: String, val args: String, val times: Long, val lastLabel: String?, val prefix: RepPrefix = RepPrefix.NONE)
 
     private val errors = mutableListOf<AsmError>()
     private val symbols = LinkedHashMap<String, Long>()
@@ -103,6 +105,27 @@ class Assembler {
 
                 var (word, rest) = splitFirst(line)
                 var lw = word.lowercase()
+
+                // Repeat prefixes ("rep movsb") and the string-instruction forms we don't support.
+                var prefix = RepPrefix.NONE
+                val next = splitFirst(rest).first.lowercase()
+                if (next !in DATA_DIRECTIVES && next != "equ" && next != "times") when {
+                    lw == "a32" -> throw AsmFail("the 32-bit address-size override ('a32') isn't supported; string instructions use rcx, rsi and rdi")
+                    lw in SEGMENT_REGS && (next in PREFIXES || next in StringOp.BARE || StringOp.of(next) != null) ->
+                        throw AsmFail("segment overrides ('$lw') aren't supported")
+                    lw in PORT_IO || (lw in PREFIXES && next in PORT_IO) ->
+                        throw AsmFail("port I/O instructions ('insb', 'outsb', …) are privileged and not supported")
+                    lw in StringOp.BARE ->
+                        throw AsmFail("write the size in the name: '${lw}b', '${lw}w', '${lw}d' or '${lw}q' (NASM doesn't accept operands here)")
+                    lw in PREFIXES -> {
+                        val (w2, r2) = splitFirst(rest)
+                        if (w2.isEmpty()) throw AsmFail("'$word' needs a string instruction after it, e.g. '$lw movsb'")
+                        if (StringOp.of(w2) == null)
+                            throw AsmFail("'$lw' only works with string instructions (movs, stos, lods, scas, cmps), not '$w2'")
+                        prefix = RepPrefix.parse(lw)!!
+                        word = w2; rest = r2; lw = w2.lowercase()
+                    }
+                }
 
                 // NASM also allows a label without a colon before data directives: "msg db 'hi'"
                 if (lw !in DIRECTIVES && lw !in MNEMONICS && !isCondMnemonic(lw)) {
@@ -174,7 +197,7 @@ class Assembler {
                         if (times != 1L) throw AsmFail("'times' with instructions isn't supported")
                         val address = text.start + text.size
                         text.size += Instruction.INSTRUCTION_SLOT
-                        pending += Pending(ln, text, address, lw, rest, 1, lastLabel)
+                        pending += Pending(ln, text, address, lw, rest, 1, lastLabel, prefix)
                     }
                 }
             } catch (e: AsmFail) {
@@ -189,8 +212,9 @@ class Assembler {
         for (p in pending) {
             try {
                 if (p.section == text) {
+                    if (StringOp.of(p.op) != null && p.args.isNotBlank()) throw stringOperands(p.op)
                     val ops = splitOperands(p.args).map { parseOperand(it, p) }
-                    instructions += Instruction(p.op, check(p.op, ops), p.address, p.line, lines[p.line].trim())
+                    instructions += Instruction(p.op, check(p.op, ops), p.address, p.line, lines[p.line].trim(), p.prefix)
                 } else {
                     val bytes = encodeData(p)
                     val off = (p.address - p.section.start).toInt()
@@ -242,7 +266,7 @@ class Assembler {
 
     private fun defineLabel(name: String, section: Section, ln: Int) {
         if (Registers.isRegister(name)) throw AsmFail("'$name' is a register name and can't be a label")
-        if (name.lowercase() in MNEMONICS) throw AsmFail("'$name' is an instruction name and can't be a label")
+        if (name.lowercase() in MNEMONICS || name.lowercase() in PREFIXES) throw AsmFail("'$name' is an instruction name and can't be a label")
         if (name in symbols) throw AsmFail("label '$name' is defined more than once")
         symbols[name] = section.start + if (section == text) section.size else section.length
     }
@@ -427,6 +451,7 @@ class Assembler {
         }
 
         return when {
+            StringOp.of(m) != null -> { if (ops.isNotEmpty()) throw stringOperands(m); ops }
             m in ZERO_OPERAND -> { count(0); ops }
             m == "ret" -> { count(0, 1); if (ops.isNotEmpty()) need(ops[0] is ImmOp, "'ret' takes an immediate byte count"); ops }
             m in BINARY -> binary()
@@ -504,6 +529,20 @@ class Assembler {
         }
     }
 
+    /** String instructions take no operands in NASM; `movsd`/`cmpsd` with operands are the SSE forms. */
+    private fun stringOperands(m: String): AsmFail {
+        if (m == "movsd" || m == "cmpsd") return AsmFail(
+            "'$m' with operands is the SSE floating-point instruction, which isn't supported; the string instruction '$m' takes no operands")
+        val op = StringOp.of(m)!!
+        val acc = when (op.size) { 1 -> "al"; 2 -> "ax"; 4 -> "eax"; else -> "rax" }
+        val implicit = when (op.family) {
+            StringOp.Family.MOVS, StringOp.Family.CMPS -> "[rsi] and [rdi]"
+            StringOp.Family.STOS, StringOp.Family.SCAS -> "$acc and [rdi]"
+            StringOp.Family.LODS -> "[rsi] and $acc"
+        }
+        return AsmFail("'$m' takes no operands: it always uses $implicit")
+    }
+
     private fun isCondMnemonic(m: String) =
         (m.startsWith("j") && m.substring(1) in CONDITIONS) ||
         (m.startsWith("set") && m.substring(3) in CONDITIONS) ||
@@ -519,7 +558,11 @@ class Assembler {
         val SHIFTS = setOf("shl", "sal", "shr", "sar", "rol", "ror")
         val LOOPS = setOf("loop", "jrcxz", "jecxz")
         val MNEMONICS = ZERO_OPERAND + BINARY + UNARY + SHIFTS + LOOPS +
-            setOf("ret", "lea", "xchg", "movzx", "movsx", "movsxd", "imul", "push", "pop", "jmp", "call")
+            setOf("ret", "lea", "xchg", "movzx", "movsx", "movsxd", "imul", "push", "pop", "jmp", "call") +
+            StringOp.ALL_MNEMONICS
+        val PREFIXES = RepPrefix.SPELLINGS.keys
+        private val PORT_IO = setOf("insb", "insw", "insd", "outsb", "outsw", "outsd", "ins", "outs")
+        private val SEGMENT_REGS = setOf("fs", "gs", "cs", "ds", "es", "ss")
         val DATA_DIRECTIVES = mapOf("db" to 1, "dw" to 2, "dd" to 4, "dq" to 8,
             "resb" to 1, "resw" to 2, "resd" to 4, "resq" to 8)
         val DIRECTIVES = setOf("section", "segment", "global", "extern", "bits", "default", "cpu", "align", "times", "equ") +

@@ -54,7 +54,7 @@ class Machine {
 
     /** Everything one step changed, so it can be undone. */
     private class StepRecord(
-        val regs: LongArray, val rip: Long, val flags: Long,
+        val regs: LongArray, val rip: Long, val flags: Long, val repeating: Boolean,
         val state: MachineState, val message: String, val steps: Long, val exitCode: Int?,
         val outputMark: Int,
     ) {
@@ -84,6 +84,7 @@ class Machine {
         r.regs.copyInto(cpu.regs)
         cpu.rip = r.rip
         cpu.setFlags(r.flags)
+        cpu.repeating = r.repeating
         state = r.state
         message = r.message
         steps = r.steps
@@ -141,7 +142,7 @@ class Machine {
     fun step(): Boolean {
         if (!canStep) return false
         memory.writerTag = cpu.currentInstruction()?.line ?: -1
-        val rec = if (keepHistory) StepRecord(cpu.regs.copyOf(), cpu.rip, cpu.rflags, state, message, steps, exitCode, outputMark()) else null
+        val rec = if (keepHistory) StepRecord(cpu.regs.copyOf(), cpu.rip, cpu.rflags, cpu.repeating, state, message, steps, exitCode, outputMark()) else null
         recording = rec
         memory.undoLog = rec?.memory
         val result = try {
