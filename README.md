@@ -70,6 +70,8 @@ The launcher used to be called `x86sim`; update any scripts that call it.
   the next instruction, and the Reference tab lists everything that's supported.
 - 9 example programs: hello world, loops, recursion, keyboard input, arrays, bubble sort, a tour of
   the flags, local variables on the stack, and string operations (`rep movsb`, `repne scasb`, ...).
+  Load them from **File → Examples**. The toolbar shows the name of the open program, with a
+  leading `*` when it has unsaved changes (`*New File` until a new program is saved).
 
 ## Supported instructions
 

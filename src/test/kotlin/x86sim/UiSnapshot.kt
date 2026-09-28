@@ -31,6 +31,8 @@ fun main(args: Array<String>) {
         } else if (example.startsWith("FILE:")) {
             w.loadExample("01_hello")
             w.editor.text = File(example.removePrefix("FILE:")).readText()
+        } else if (example.startsWith("OPEN:")) {
+            w.openFile(File(example.removePrefix("OPEN:")))
         } else if (example != "ABOUT") w.loadExample(example.removePrefix("CFG:"))
         repeat(steps) { w.step() }
         repeat(args.getOrElse(5) { "0" }.toInt()) { x86sim.ui.Theme.zoomIn() }
