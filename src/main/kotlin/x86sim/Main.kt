@@ -1,11 +1,16 @@
 package x86sim
 
 import java.io.File
+import java.io.PrintStream
 import kotlin.system.exitProcess
 import x86sim.analysis.ProgramLint
 import x86sim.asm.Assembler
 import x86sim.asm.AssemblyException
 import x86sim.cpu.Registers
+import x86sim.disasm.Detection
+import x86sim.disasm.Disassembler
+import x86sim.disasm.Listing
+import x86sim.disasm.readAndDetect
 import x86sim.ui.MainWindow
 
 object Examples {
@@ -32,12 +37,17 @@ Usage:
   ${AppInfo.COMMAND}                          open the visual simulator
   ${AppInfo.COMMAND} run <file.asm> [--trace] assemble and run in the terminal
   ${AppInfo.COMMAND} run --example <name>     run a built-in example (e.g. 01_hello)
+  ${AppInfo.COMMAND} disasm <binary>          disassemble an x86-64 ELF, Mach-O or PE program
 """
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         MainWindow.launch()
         return
+    }
+    if (args[0] == "disasm") {
+        if (args.size < 2) { print(USAGE); exitProcess(2) }
+        exitProcess(runDisasm(args[1]))
     }
     if (args[0] != "run" || args.size < 2) {
         print(USAGE); exitProcess(if (args[0] in listOf("-h", "--help")) 0 else 2)
@@ -75,4 +85,18 @@ fun runCli(source: String, trace: Boolean): Int {
     System.err.println("[sim] ${m.message} (${m.steps} instructions)")
     m.fault?.let { System.err.println("[sim] hint: ${it.hint}") }
     return m.exitCode ?: if (m.state == MachineState.FAULTED) 139 else 0
+}
+
+/** `disasm <binary>`: prints the same listing the editor shows, or why the file was rejected (exit 1). */
+fun runDisasm(path: String, out: PrintStream = System.out, err: PrintStream = System.err): Int {
+    val file = File(path)
+    return when (val d = readAndDetect(file)) {
+        is Detection.Rejected -> { err.println("error: ${d.message}"); 1 }
+        is Detection.Supported -> {
+            val listing = Disassembler.listing(d.image, file.name) { false }
+            out.print(listing.text); out.flush()
+            if (listing.truncated) err.println("warning: listing cut off at ${Listing.MAX_LINES} lines")
+            0
+        }
+    }
 }

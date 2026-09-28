@@ -3,8 +3,11 @@ package x86sim
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import x86sim.ui.Document
+import x86sim.ui.defaultSaveName
+import x86sim.ui.saveDirectory
 import x86sim.ui.labelText
 import x86sim.ui.titleName
 import x86sim.ui.tooltipText
@@ -48,5 +51,26 @@ class DocumentLabelTest {
         assertEquals("untitled", Document.New.titleName)
         assertEquals("Hello, world", example.titleName)
         assertEquals("loop.asm", opened.titleName)
+    }
+
+    @Test fun `disassembly label`() {
+        val bin = File("/tmp/hello")
+        val doc = Document.Disassembly(bin, "ELF64 x86-64 executable")
+        assertEquals("hello (disassembly)", doc.titleName)
+        assertEquals("*hello (disassembly)", labelText(doc, true))
+        assertEquals("hello (disassembly)", labelText(doc, false))
+        assertEquals("${bin.absolutePath} — ELF64 x86-64 executable", tooltipText(doc))
+    }
+
+    @Test fun `save suggestions`() {
+        val pe = Document.Disassembly(File("/x/hello-pe.exe"), "PE32+ x86-64 executable")
+        assertEquals("hello-pe.asm", defaultSaveName(pe))
+        assertEquals("hello.asm", defaultSaveName(Document.Disassembly(File("/x/hello"), "")))
+        assertEquals("a.asm", defaultSaveName(Document.Opened(File("/x/a.asm"))))
+        assertEquals("program.asm", defaultSaveName(Document.New))
+        assertEquals("program.asm", defaultSaveName(example))
+        assertEquals(File("/x").absoluteFile, saveDirectory(pe))
+        assertNull(saveDirectory(opened))
+        assertNull(saveDirectory(Document.New))
     }
 }

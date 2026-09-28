@@ -14,6 +14,7 @@ dependencies {
     implementation("com.formdev:flatlaf:3.7.2")
     implementation("com.formdev:flatlaf-fonts-inter:4.1")
     implementation("com.formdev:flatlaf-fonts-jetbrains-mono:2.304")
+    implementation("io.github.icedland.iced:iced-x86:1.21.0") // x86-64 decoder + NASM formatter (pure Java, MIT)
     testImplementation(kotlin("test"))
 }
 

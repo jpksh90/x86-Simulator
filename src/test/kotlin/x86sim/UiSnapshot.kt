@@ -31,6 +31,12 @@ fun main(args: Array<String>) {
         } else if (example.startsWith("FILE:")) {
             w.loadExample("01_hello")
             w.editor.text = File(example.removePrefix("FILE:")).readText()
+        } else if (example.startsWith("DISASM:")) {
+            val f = File(example.removePrefix("DISASM:"))
+            val d = x86sim.disasm.readAndDetect(f) as x86sim.disasm.Detection.Supported
+            w.showDisassembly(f, x86sim.disasm.Disassembler.listing(d.image, f.name) { false })
+        } else if (example.startsWith("REJECT:")) {
+            w.loadExample("01_hello")
         } else if (example.startsWith("OPEN:")) {
             w.openFile(File(example.removePrefix("OPEN:")))
         } else if (example != "ABOUT") w.loadExample(example.removePrefix("CFG:"))
@@ -44,6 +50,10 @@ fun main(args: Array<String>) {
     // The About dialog is modal, so open it later and let its own event loop keep running.
     if (example == "ABOUT") SwingUtilities.invokeLater {
         (java.awt.Frame.getFrames().first { it.isVisible } as MainWindow).showAbout()
+    }
+    if (example.startsWith("REJECT:")) SwingUtilities.invokeLater {
+        val r = x86sim.disasm.readAndDetect(File(example.removePrefix("REJECT:"))) as x86sim.disasm.Detection.Rejected
+        (java.awt.Frame.getFrames().first { it.isVisible } as MainWindow).cantDisassemble(r.message)
     }
     Thread.sleep(300)
     // Step once more after the window is laid out, as a user would.

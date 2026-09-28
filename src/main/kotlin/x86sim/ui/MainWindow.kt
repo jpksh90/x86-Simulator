@@ -39,7 +39,9 @@ import javax.swing.JSplitPane
 import javax.swing.JTabbedPane
 import javax.swing.JToolBar
 import javax.swing.KeyStroke
+import javax.swing.JTextArea
 import javax.swing.SwingUtilities
+import javax.swing.SwingWorker
 import javax.swing.Timer
 import javax.swing.UIManager
 import x86sim.AppInfo
@@ -54,6 +56,11 @@ import x86sim.asm.AssemblyException
 import x86sim.cpu.Registers
 import x86sim.cpu.RepPrefix
 import x86sim.cpu.StringOp
+import x86sim.disasm.Detection
+import x86sim.disasm.DisassemblyCancelled
+import x86sim.disasm.Disassembler
+import x86sim.disasm.Listing
+import x86sim.disasm.readAndDetect
 
 class MainWindow : JFrame() {
     internal val machine = Machine()
@@ -341,6 +348,7 @@ class MainWindow : JFrame() {
         add(JMenu("File").apply {
             add(item("New", KeyEvent.VK_N) { if (confirmDiscard()) { document = Document.New; setSource(NEW_PROGRAM) } })
             add(item("Open…", KeyEvent.VK_O) { open() })
+            add(item("Disassemble Binary…", KeyEvent.VK_O, InputEvent.SHIFT_DOWN_MASK) { disassemble() })
             add(item("Save", KeyEvent.VK_S) { save(false) })
             add(item("Save As…", KeyEvent.VK_S, InputEvent.SHIFT_DOWN_MASK) { save(true) })
             addSeparator()
@@ -454,11 +462,86 @@ class MainWindow : JFrame() {
         setSource(f.readText())
     }
 
+    private var disassembling = false
+
+    /** File → Disassemble Binary…: checks and decodes a compiled program off the UI thread. */
+    private fun disassemble() {
+        if (disassembling || !confirmDiscard()) return
+        val d = FileDialog(this, "Disassemble a compiled program", FileDialog.LOAD).apply { isVisible = true }
+        val f = d.file?.let { File(d.directory, it) } ?: return
+        disassembling = true
+        var progress: JDialog? = null
+        val worker = object : SwingWorker<Any, Unit>() {
+            override fun doInBackground(): Any = when (val r = readAndDetect(f)) {
+                is Detection.Rejected -> r
+                is Detection.Supported -> Disassembler.listing(r.image, f.name) { isCancelled }
+            }
+
+            override fun done() {
+                disassembling = false
+                progress?.dispose()
+                if (isCancelled) return
+                val result = try {
+                    get()
+                } catch (e: java.util.concurrent.ExecutionException) {
+                    if (e.cause is DisassemblyCancelled) return
+                    cantDisassemble("Something went wrong while disassembling ${f.name}: ${e.cause?.message ?: e}")
+                    return
+                }
+                when (result) {
+                    is Detection.Rejected -> cantDisassemble(result.message)
+                    is Listing -> showDisassembly(f, result)
+                }
+            }
+        }
+        Timer(400) {
+            if (worker.isDone) return@Timer
+            val dlg = JDialog(this, "Disassembling", true).apply {
+                contentPane = JPanel(BorderLayout(0, Theme.z(10))).apply {
+                    border = BorderFactory.createEmptyBorder(Theme.z(16), Theme.z(20), Theme.z(12), Theme.z(20))
+                    add(JLabel("Disassembling ${f.name}…"), BorderLayout.CENTER)
+                    add(JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)).apply {
+                        isOpaque = false
+                        add(JButton("Cancel").apply { addActionListener { worker.cancel(true); this@apply.isEnabled = false } })
+                    }, BorderLayout.SOUTH)
+                }
+                defaultCloseOperation = JDialog.DO_NOTHING_ON_CLOSE
+                pack(); setLocationRelativeTo(this@MainWindow)
+            }
+            progress = dlg // set before showing: a modal dialog blocks until done() disposes it
+            if (!worker.isDone) dlg.isVisible = true
+        }.apply { isRepeats = false; start() }
+        worker.execute()
+    }
+
+    /** Explains why a file can't be disassembled; the editor is left exactly as it was. */
+    internal fun cantDisassemble(text: String) {
+        val area = JTextArea(text).apply {
+            isEditable = false; lineWrap = true; wrapStyleWord = true; isOpaque = false
+            font = UIManager.getFont("Label.font")
+            setSize(Theme.z(420), Short.MAX_VALUE.toInt())
+            preferredSize = Dimension(Theme.z(420), preferredSize.height)
+        }
+        JOptionPane.showMessageDialog(this, area, "Can't disassemble this file", JOptionPane.ERROR_MESSAGE)
+    }
+
+    internal fun showDisassembly(binary: File, listing: Listing) {
+        document = Document.Disassembly(binary, listing.summary)
+        setSource(listing.text)
+        unsaved = true // a listing has never been saved
+        updateTitle()
+        editor.caretPosition = 0
+        message("Disassembled ${binary.name} (${listing.summary}): ${listing.instructionCount} instructions — " +
+            "read-only listing; it may not assemble or run here." +
+            if (listing.truncated) " Listing cut off at ${Listing.MAX_LINES} lines." else "", Theme.ok)
+    }
+
     private fun save(askName: Boolean): Boolean {
-        var f = file
+        var f = file // a disassembly is never saved over its binary: file is null, so this asks
         if (f == null || askName) {
             val d = FileDialog(this, "Save assembly file", FileDialog.SAVE).apply {
-                file = this@MainWindow.file?.name ?: "program.asm"; isVisible = true
+                saveDirectory(document)?.let { directory = it.path }
+                file = defaultSaveName(document); isVisible = true
             }
             f = d.file?.let { File(d.directory, it) } ?: return false
         }
