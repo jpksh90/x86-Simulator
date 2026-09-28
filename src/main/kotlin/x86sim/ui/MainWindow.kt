@@ -22,7 +22,6 @@ import javax.swing.Action
 import javax.swing.BorderFactory
 import javax.swing.DefaultListModel
 import javax.swing.JButton
-import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JDialog
 import javax.swing.JEditorPane
@@ -75,9 +74,13 @@ class MainWindow : JFrame() {
     private val stepsLabel = JLabel()
     private val nextLabel = JLabel(" ")
     private val speedValue = JLabel()
+    /** Names the open program at the left of the toolbar; `*` marks unsaved edits. */
+    private val docLabel = JLabel().apply {
+        Theme.onChange { font = Theme.ui(13f, Font.BOLD); foreground = Theme.text; capWidth() }
+    }
 
-    private var file: File? = null
-    private var docName = "untitled"
+    private var document: Document = Document.New
+    private val file: File? get() = (document as? Document.Opened)?.file
     private var unsaved = false
     /** Source changed since it was last assembled. */
     private var stale = true
@@ -191,15 +194,7 @@ class MainWindow : JFrame() {
         val toolbar = JToolBar().apply {
             isFloatable = false
             border = BorderFactory.createEmptyBorder(6, 10, 6, 10)
-            val examples = JComboBox(arrayOf("Examples") + Examples.names.map { it.second }).apply {
-                maximumSize = Dimension(200, 30)
-                toolTipText = "Load an example"
-                addActionListener {
-                    val i = selectedIndex
-                    if (i > 0) { selectedIndex = 0; if (confirmDiscard()) loadExample(Examples.names[i - 1].first) }
-                }
-            }
-            add(examples)
+            add(docLabel)
             addSeparator(Dimension(14, 0))
             fun button(a: Action, label: String) = JButton(a).apply {
                 text = label
@@ -344,7 +339,7 @@ class MainWindow : JFrame() {
 
     private fun buildMenus() = JMenuBar().apply {
         add(JMenu("File").apply {
-            add(item("New", KeyEvent.VK_N) { if (confirmDiscard()) { file = null; docName = "untitled"; setSource(NEW_PROGRAM) } })
+            add(item("New", KeyEvent.VK_N) { if (confirmDiscard()) { document = Document.New; setSource(NEW_PROGRAM) } })
             add(item("Open…", KeyEvent.VK_O) { open() })
             add(item("Save", KeyEvent.VK_S) { save(false) })
             add(item("Save As…", KeyEvent.VK_S, InputEvent.SHIFT_DOWN_MASK) { save(true) })
@@ -444,17 +439,18 @@ class MainWindow : JFrame() {
     }
 
     internal fun loadExample(id: String) {
-        file = null
-        docName = Examples.names.first { it.first == id }.second
+        document = Document.Example(Examples.names.first { it.first == id }.second)
         setSource(Examples.load(id))
     }
 
     private fun open() {
         if (!confirmDiscard()) return
         val d = FileDialog(this, "Open assembly file", FileDialog.LOAD).apply { isVisible = true }
-        val f = d.file?.let { File(d.directory, it) } ?: return
-        file = f
-        docName = f.name
+        openFile(d.file?.let { File(d.directory, it) } ?: return)
+    }
+
+    internal fun openFile(f: File) {
+        document = Document.Opened(f)
         setSource(f.readText())
     }
 
@@ -467,8 +463,7 @@ class MainWindow : JFrame() {
             f = d.file?.let { File(d.directory, it) } ?: return false
         }
         f.writeText(editor.text)
-        file = f
-        docName = f.name
+        document = Document.Opened(f)
         unsaved = false
         updateTitle()
         message("Saved ${f.name}", Theme.ok)
@@ -487,7 +482,21 @@ class MainWindow : JFrame() {
     }
 
     private fun updateTitle() {
-        title = "${AppInfo.NAME} — $docName" + if (unsaved) " •" else ""
+        title = "${AppInfo.NAME} — ${document.titleName}" + if (unsaved) " •" else ""
+        docLabel.text = labelText(document, unsaved)
+        docLabel.toolTipText = tooltipText(document)
+        docLabel.capWidth()
+    }
+
+    /** Caps the label's width so a long file name is shortened with "…" instead of crowding the toolbar. */
+    private fun JLabel.capWidth() {
+        preferredSize = null
+        val pref = preferredSize
+        preferredSize = Dimension(minOf(pref.width, Theme.z(220)), pref.height)
+        maximumSize = preferredSize
+        // The toolbar's layout never goes below the minimum, which otherwise stays at the full text width.
+        minimumSize = Dimension(minOf(pref.width, Theme.z(80)), pref.height)
+        revalidate()
     }
 
     // ---------------- assembling & running ----------------
