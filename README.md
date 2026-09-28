@@ -19,6 +19,7 @@ Or build a launcher once and use it:
 build/install/x86learn/bin/x86learn                               # GUI
 build/install/x86learn/bin/x86learn run program.asm [--trace]     # headless, in the terminal
 build/install/x86learn/bin/x86learn run --example 03_factorial
+build/install/x86learn/bin/x86learn disasm /path/to/program               # print a disassembly
 ```
 
 The launcher used to be called `x86sim`; update any scripts that call it.
@@ -66,6 +67,17 @@ The launcher used to be called `x86sim`; update any scripts that call it.
   the program until you type something.
 - **Faults behave like real ones**: segmentation faults on unmapped or read-only memory, and `#DE` on
   divide-by-zero or quotient overflow.
+- **Disassembler** (File → Disassemble Binary…, ⇧⌘O): pick a compiled x86-64 program and see its
+  machine code as NASM-syntax assembly in the editor. It reads Linux **ELF64**, macOS **Mach-O 64-bit**
+  (including the x86-64 part of a universal binary) and Windows **PE32+** files, and it decides the
+  format from the file's contents, not its name. Each line shows the instruction's address and bytes
+  as a comment. The entry point, jump and call targets, symbols and library calls (`puts@plt`,
+  `_puts@stub`, `__imp_KERNEL32.dll_ExitProcess`) get labels, and bytes that aren't valid instructions
+  are shown as `db`. Files that can't be disassembled are turned away with the reason: not a program
+  (e.g. a text file or an image), a program for another CPU such as ARM64, a 32-bit program, or a
+  damaged file. The listing opens as a new unsaved program, and saving it asks for a new `.asm` file,
+  so the binary itself is never changed. `x86learn disasm <binary>` prints the same listing in the
+  terminal.
 - **Help while you work**: hover an instruction or register for a description. The status bar explains
   the next instruction, and the Reference tab lists everything that's supported.
 - 9 example programs: hello world, loops, recursion, keyboard input, arrays, bubble sort, a tour of
@@ -108,6 +120,12 @@ address to an exit stub, so a `main` that ends with `ret` exits with the code in
   as an exit: end `_start` with an `exit` syscall or `ret`.
 - There's no floating point/SSE and no linker or C library (`extern` is rejected). Programs talk to
   the "OS" through `syscall`.
+- Disassembled listings are for reading. They show real compiled code exactly as it is, so they
+  often contain things the simulator can't run (SSE, calls into a C library, other operating
+  systems' conventions) and usually won't assemble here. Decoding is a linear sweep from the start
+  of each code section, so data mixed into code can show up as odd instructions. Relocations in
+  object (`.o`) files aren't applied, and their sections are placed one after another from address
+  0. A listing stops at 10,000 lines, and only the first 4 KiB of each data section is shown.
 - String instructions are supported only in their 64-bit forms (rcx, rsi, rdi) with a size suffix
   (`movsb`, not `movs byte [rdi], [rsi]`). There's no `ins`/`outs`, and no segment-override or `a32` prefixes.
 
@@ -118,9 +136,19 @@ src/main/kotlin/x86sim/
   cpu/      Registers, Memory (regions and faults), Instruction model, Cpu (execution and flags)
   asm/      Expression parser, two-pass Assembler with validation
   analysis/ ControlFlowGraph: basic blocks, edges, functions
+  disasm/   Disassembler: ELF/Mach-O/PE readers, file-type detection, NASM listing (decoding by iced-x86)
   Machine.kt   loads programs, maps memory, implements the Linux syscalls
   Main.kt      GUI launcher and headless CLI
   ui/       Swing UI: editor + gutter, registers, stack, memory, console, main window
 src/main/resources/examples/   example programs
 src/test/kotlin/               unit tests (./gradlew test) and UiSnapshot, a dev helper that renders the UI to PNG
+src/test/resources/binaries/   compiled programs used by the disassembler tests (see its README)
 ```
+
+## Third-party software
+
+- [FlatLaf](https://www.formdev.com/flatlaf/) (Apache License 2.0), with the Inter and JetBrains Mono
+  fonts (SIL Open Font License 1.1).
+- [iced-x86](https://github.com/icedland/iced) (MIT License) decodes machine code for the disassembler.
+
+Full license texts are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
