@@ -146,6 +146,7 @@ class MainWindow : JFrame() {
 
     init {
         title = AppInfo.NAME
+        AppIcon.installOn(this)
         rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
         defaultCloseOperation = DO_NOTHING_ON_CLOSE
         addWindowListener(object : WindowAdapter() {
@@ -392,7 +393,7 @@ class MainWindow : JFrame() {
     }
 
     internal fun showAbout() = JOptionPane.showMessageDialog(this, JLabel(AppInfo.aboutHtml(UIScale.scale(360))),
-        "About ${AppInfo.NAME}", JOptionPane.INFORMATION_MESSAGE)
+        "About ${AppInfo.NAME}", JOptionPane.INFORMATION_MESSAGE, AppIcon.aboutIcon())
 
     private fun item(name: String, key: Int, extra: Int = 0, body: () -> Unit) = JMenuItem(name).apply {
         accelerator = KeyStroke.getKeyStroke(key, menuKey or extra)
@@ -917,6 +918,7 @@ _start:
             System.setProperty("apple.laf.useScreenMenuBar", "true")
             System.setProperty("apple.awt.application.name", AppInfo.NAME)
             System.setProperty("awt.useSystemAAFontSettings", "on")
+            AppIcon.installDockIcon()
             SwingUtilities.invokeLater {
                 Theme.install()
                 MainWindow().isVisible = true
