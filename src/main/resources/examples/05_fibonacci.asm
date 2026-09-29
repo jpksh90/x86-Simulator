@@ -9,7 +9,7 @@ global _start
 _start:
     mov qword [fib], 0
     mov qword [fib+8], 1
-    mov rcx, 2              ; index of the next element
+    mov rcx, 2                     ; index of the next element
 .next:
     mov rax, [fib + rcx*8 - 8]     ; fib[i-1]
     add rax, [fib + rcx*8 - 16]    ; + fib[i-2]

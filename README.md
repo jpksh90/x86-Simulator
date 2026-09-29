@@ -35,6 +35,13 @@ The launcher used to be called `x86sim`; update any scripts that call it.
   gives errors a beginner can act on, like "operation size not specified" or "two memory operands".
   It also warns (without blocking the run) when execution can run past the last instruction or a
   label has no instruction after it.
+
+- **Assembly-style indentation**: the editor lays code out the way NASM programs are written.
+  Labels and `section`/`global` lines sit in column 0, and instructions and data are indented one
+  level (4 spaces). Enter indents the next line, typing the `:` of a label moves it to column 0, and
+  `;` after code lines the comment up with its neighbours. Tab and Shift+Tab indent or unindent the
+  selected lines, and Backspace in leading spaces removes a whole level. **Edit → Format Program
+  (⇧⌘F)** tidies a whole pasted program; it only changes whitespace and is one Undo step.
 - **Crash explanations**: when execution leaves the program's code, the segmentation fault says
   why (ran past the last instruction, jumped to an empty label, `ret` to something that isn't a
   return address, a bad indirect jump), names the line responsible, highlights it and suggests a fix.
@@ -134,7 +141,7 @@ address to an exit stub, so a `main` that ends with `ret` exits with the code in
 ```
 src/main/kotlin/x86sim/
   cpu/      Registers, Memory (regions and faults), Instruction model, Cpu (execution and flags)
-  asm/      Expression parser, two-pass Assembler with validation
+  asm/      Expression parser, two-pass Assembler with validation, SourceLayout (editor indentation rules)
   analysis/ ControlFlowGraph: basic blocks, edges, functions
   disasm/   Disassembler: ELF/Mach-O/PE readers, file-type detection, NASM listing (decoding by iced-x86)
   Machine.kt   loads programs, maps memory, implements the Linux syscalls

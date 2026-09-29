@@ -209,6 +209,14 @@ object Docs {
         append("<li>Data: <code>db dw dd dq</code>, <code>resb resw resd resq</code>, <code>times N db 0</code>, <code>len equ $ - msg</code>.</li>")
         append("<li>Numbers: <code>42</code>, <code>0x2a</code>, <code>2ah</code>, <code>0b101010</code>, <code>'A'</code>. Strings in backquotes understand escapes: <code>`hi\\n`</code>.</li>")
         append("<li>Execution starts at <code>_start</code> (or <code>main</code>). Returning from it with <code>ret</code> ends the program with exit code <code>eax</code>.</li>")
+        append("</ul><h2>Code layout</h2><ul>")
+        append("<li>Labels and <code>section</code>, <code>global</code>, <code>extern</code>, <code>default</code>, <code>bits</code> start in column 0.</li>")
+        append("<li>Instructions and data (<code>db</code>, <code>resb</code>, <code>equ</code>, ...) are indented one level (4 spaces).</li>")
+        append("<li>Trailing <code>;</code> comments line up in a column.</li>")
+        append("<li><b>Enter</b> indents the next line; typing the <code>:</code> of a label moves it to column 0; ")
+        append("<code>;</code> after code jumps to the comment column.</li>")
+        append("<li><b>Tab</b> / <b>Shift+Tab</b> indent or unindent the selected lines; <b>Backspace</b> in leading spaces removes a whole level.</li>")
+        append("<li><b>Edit → Format Program</b> (⇧⌘F, Ctrl+Shift+F on Windows/Linux) lays out the whole program. Only whitespace changes, and one Undo reverts it.</li>")
         append("</ul></body></html>")
     }
 
