@@ -54,6 +54,7 @@ class CfgWindow(
     private var updatingBox = false
 
     init {
+        AppIcon.installOn(this)
         val legend = JPanel(FlowLayout(FlowLayout.LEFT, 10, 0)).apply {
             isOpaque = false
             add(legendItem({ Theme.edgeTaken }, "taken"))

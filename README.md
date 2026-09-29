@@ -127,6 +127,9 @@ address to an exit stub, so a `main` that ends with `ret` exits with the code in
   as an exit: end `_start` with an `exit` syscall or `ret`.
 - There's no floating point/SSE and no linker or C library (`extern` is rejected). Programs talk to
   the "OS" through `syscall`.
+- The app sets its icon when it starts, so the Dock or taskbar may show the generic Java icon for a
+  moment. Some Wayland Linux desktops look icons up from an installed launcher, which x86Learn doesn't
+  have, so they may keep showing a generic one.
 - Disassembled listings are for reading. They show real compiled code exactly as it is, so they
   often contain things the simulator can't run (SSE, calls into a C library, other operating
   systems' conventions) and usually won't assemble here. Decoding is a linear sweep from the start
@@ -148,6 +151,7 @@ src/main/kotlin/x86sim/
   Main.kt      GUI launcher and headless CLI
   ui/       Swing UI: editor + gutter, registers, stack, memory, console, main window
 src/main/resources/examples/   example programs
+src/main/resources/icons/      app icon, 16–256 px (Dock, taskbar, title bar, About)
 src/test/kotlin/               unit tests (./gradlew test) and UiSnapshot, a dev helper that renders the UI to PNG
 src/test/resources/binaries/   compiled programs used by the disassembler tests (see its README)
 ```
@@ -157,5 +161,7 @@ src/test/resources/binaries/   compiled programs used by the disassembler tests 
 - [FlatLaf](https://www.formdev.com/flatlaf/) (Apache License 2.0), with the Inter and JetBrains Mono
   fonts (SIL Open Font License 1.1).
 - [iced-x86](https://github.com/icedland/iced) (MIT License) decodes machine code for the disassembler.
+
+The app icon was generated with ChatGPT for this project.
 
 Full license texts are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -41,7 +41,9 @@ fun main(args: Array<String>) {
             w.openFile(File(example.removePrefix("OPEN:")))
         } else if (example != "ABOUT") w.loadExample(example.removePrefix("CFG:"))
         repeat(steps) { w.step() }
-        repeat(args.getOrElse(5) { "0" }.toInt()) { x86sim.ui.Theme.zoomIn() }
+        val zoomSteps = args.getOrElse(5) { "0" }.toInt() // negative zooms out
+        repeat(maxOf(zoomSteps, 0)) { x86sim.ui.Theme.zoomIn() }
+        repeat(maxOf(-zoomSteps, 0)) { x86sim.ui.Theme.zoomOut() }
         repeat(args.getOrElse(6) { "0" }.toInt()) { w.stepBack() }
         if (example.startsWith("CFG:")) w.showCfg()
         w.bottomTabs.selectedIndex = tab
