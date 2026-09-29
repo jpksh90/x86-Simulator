@@ -20,15 +20,30 @@ import javax.swing.text.AttributeSet
 import javax.swing.text.SimpleAttributeSet
 import javax.swing.text.StyleConstants
 import javax.swing.text.StyledDocument
+import javax.swing.KeyStroke
+import javax.swing.text.AbstractDocument
+import javax.swing.text.DefaultEditorKit
+import javax.swing.undo.CompoundEdit
 import javax.swing.undo.UndoManager
 import x86sim.asm.Assembler
+import x86sim.asm.SourceLayout
+import x86sim.asm.SourceLayout.LineKind
 import x86sim.cpu.Registers
 
 /**
  * Assembly source editor: syntax highlighting, current-line and error-line highlights,
- * hover documentation and an undo history.
+ * hover documentation, an undo history and assembly-style indentation ([SourceLayout]).
  */
 class AsmEditor : JTextPane() {
+    companion object {
+        const val ENTER = "asm-enter"
+        const val INDENT = "asm-indent"
+        const val UNINDENT = "asm-unindent"
+        const val BACKSPACE = "asm-backspace"
+        const val COLON = "asm-colon"
+        const val SEMICOLON = "asm-semicolon"
+    }
+
     val undo = UndoManager()
 
     /** 0-based line of the next instruction to execute, or -1. */
@@ -42,6 +57,8 @@ class AsmEditor : JTextPane() {
 
     var onEdited: () -> Unit = {}
     private var highlightPending = false
+    /** While set, text edits collect here so one key press is one Undo step. */
+    private var compound: CompoundEdit? = null
 
     init {
         isOpaque = false
@@ -58,7 +75,7 @@ class AsmEditor : JTextPane() {
         (document as StyledDocument).apply {
             addUndoableEditListener { e ->
                 // Only record text edits; attribute changes from highlighting aren't undoable steps.
-                if (e.edit.presentationName != "style change") undo.addEdit(e.edit)
+                if (e.edit.presentationName != "style change") (compound ?: undo).addEdit(e.edit)
             }
             addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(e: DocumentEvent) = changed()
@@ -66,11 +83,166 @@ class AsmEditor : JTextPane() {
                 override fun changedUpdate(e: DocumentEvent) {}
             })
         }
-        // A tab becomes four spaces, which keeps columns aligned in every font.
-        inputMap.put(javax.swing.KeyStroke.getKeyStroke("TAB"), "insert-4-spaces")
-        actionMap.put("insert-4-spaces", object : javax.swing.AbstractAction() {
-            override fun actionPerformed(e: java.awt.event.ActionEvent?) = replaceSelection("    ")
+        // Keys that lay code out in assembly columns. Indents are spaces, so columns line up in
+        // every font.
+        val deletePrevious = actionMap[DefaultEditorKit.deletePrevCharAction]
+        bind(KeyStroke.getKeyStroke("ENTER"), ENTER) { enter() }
+        bind(KeyStroke.getKeyStroke("TAB"), INDENT) { indent() }
+        bind(KeyStroke.getKeyStroke("shift TAB"), UNINDENT) { unindent() }
+        bind(KeyStroke.getKeyStroke("BACK_SPACE"), BACKSPACE) { if (!backspace()) deletePrevious.actionPerformed(it) }
+        bind(KeyStroke.getKeyStroke(':'), COLON) { colon() }
+        bind(KeyStroke.getKeyStroke(';'), SEMICOLON) { semicolon() }
+    }
+
+    private fun bind(key: KeyStroke, name: String, body: (java.awt.event.ActionEvent) -> Unit) {
+        inputMap.put(key, name)
+        actionMap.put(name, object : javax.swing.AbstractAction() {
+            override fun actionPerformed(e: java.awt.event.ActionEvent?) {
+                if (isEditable && isEnabled) body(e ?: java.awt.event.ActionEvent(this@AsmEditor, java.awt.event.ActionEvent.ACTION_PERFORMED, name))
+            }
         })
+    }
+
+    /** Runs [block] so that all the text edits it makes are undone together. */
+    fun compoundEdit(block: () -> Unit) {
+        if (compound != null) return block()
+        val edit = CompoundEdit()
+        compound = edit
+        try {
+            block()
+        } finally {
+            compound = null
+            edit.end()
+            if (edit.isSignificant) undo.addEdit(edit)
+        }
+    }
+
+    // ---------------- assembly layout ----------------
+
+    private fun lineStart(line: Int) = document.defaultRootElement.getElement(line).startOffset
+    private fun lineEnd(line: Int) = document.defaultRootElement.getElement(line).endOffset - 1
+    private fun lineText(line: Int) = document.getText(lineStart(line), lineEnd(line) - lineStart(line))
+    private fun replaceRange(start: Int, end: Int, s: String) =
+        (document as AbstractDocument).replace(start, end - start, s, null)
+
+    /** Text of the caret's line up to the caret. */
+    private fun beforeCaret(): String {
+        val pos = caretPosition
+        val start = lineStart(lineOfOffset(pos))
+        return document.getText(start, pos - start)
+    }
+
+    private fun isLevelZero(s: String) = SourceLayout.kind(s).let { it == LineKind.Label || it == LineKind.Directive }
+
+    /** New line, indented for what comes next; a label or directive being left goes to column 0. */
+    private fun enter() = compoundEdit {
+        replaceSelection("")
+        val pos = caretPosition
+        val line = lineOfOffset(pos)
+        val start = lineStart(line)
+        val before = document.getText(start, pos - start)
+        val rest = document.getText(pos, lineEnd(line) - pos).trimStart(' ', '\t')
+        val head = when {
+            before.isBlank() -> ""
+            isLevelZero(before) -> SourceLayout.placed(before, 0)
+            else -> before
+        }
+        val tail = (if (isLevelZero(rest)) "" else " ".repeat(SourceLayout.indentAfter(before))) + rest
+        replaceRange(start, lineEnd(line), head + "\n" + tail)
+        caretPosition = start + head.length + 1 + tail.length - rest.length
+    }
+
+    /** `:` that completes a label moves the line to column 0. */
+    private fun colon() = compoundEdit {
+        replaceSelection(":")
+        val before = beforeCaret()
+        val label = Assembler.LABEL_RE.find(before)
+        if (label != null && label.range.last == before.lastIndex) {
+            val indent = SourceLayout.split(before).indent.length
+            if (indent > 0) document.remove(caretPosition - before.length, indent)
+        }
+    }
+
+    /** `;` after code lands on the comment column of the surrounding lines. */
+    private fun semicolon() = compoundEdit {
+        replaceSelection("")
+        val before = beforeCaret()
+        val code = SourceLayout.split(before).code
+        if (code.isEmpty() || Assembler.commentStart("$before;") != before.length) {
+            replaceSelection(";")
+            return@compoundEdit
+        }
+        val line = lineOfOffset(caretPosition)
+        val start = lineStart(line)
+        val head = before.trimEnd()
+        val lines = (0 until lineCount).map { if (it == line) head else lineText(it) }
+        val pad = maxOf(1, SourceLayout.commentColumnFor(lines, line) - SourceLayout.visualWidth(head))
+        replaceRange(start + head.length, caretPosition, " ".repeat(pad) + ";")
+        caretPosition = start + head.length + pad + 1
+    }
+
+    /** Lines touched by the selection, or null when Tab should just insert spaces. */
+    private fun selectedLines(): IntRange? {
+        val a = selectionStart
+        val b = selectionEnd
+        if (a == b) return null
+        val first = lineOfOffset(a)
+        var last = lineOfOffset(b)
+        if (last > first && b == lineStart(last)) last--
+        val wholeLine = a == lineStart(first) && b >= lineEnd(first)
+        return if (first == last && !wholeLine) null else first..last
+    }
+
+    private fun indent() {
+        val lines = selectedLines()
+        if (lines == null) {
+            val col = SourceLayout.visualWidth(document.getText(lineStart(lineOfOffset(selectionStart)),
+                selectionStart - lineStart(lineOfOffset(selectionStart))))
+            compoundEdit { replaceSelection(" ".repeat(SourceLayout.INDENT - col % SourceLayout.INDENT)) }
+            return
+        }
+        compoundEdit {
+            for (l in lines.reversed()) if (lineText(l).isNotEmpty())
+                document.insertString(lineStart(l), " ".repeat(SourceLayout.INDENT), null)
+        }
+        select(lineStart(lines.first), lineEnd(lines.last))
+    }
+
+    private fun unindent() {
+        val lines = selectedLines()
+        compoundEdit {
+            for (l in (lines ?: lineOfOffset(caretPosition).let { it..it }).reversed()) {
+                val t = lineText(l)
+                val n = if (t.startsWith("\t")) 1 else t.takeWhile { it == ' ' }.length.coerceAtMost(SourceLayout.INDENT)
+                if (n > 0) document.remove(lineStart(l), n)
+            }
+        }
+        if (lines != null) select(lineStart(lines.first), lineEnd(lines.last))
+    }
+
+    /** Backspace in leading spaces goes back one level; false means "do a normal backspace". */
+    private fun backspace(): Boolean {
+        if (selectionStart != selectionEnd) return false
+        val before = beforeCaret()
+        if (before.isEmpty() || before.any { it != ' ' }) return false
+        val n = (before.length - 1) % SourceLayout.INDENT + 1
+        compoundEdit { document.remove(caretPosition - n, n) }
+        return true
+    }
+
+    /** Edit → Format Program: lays out every line; only whitespace changes, as one Undo step. */
+    fun formatProgram() {
+        if (!isEditable) return
+        val old = document.getText(0, document.length).split("\n")
+        val new = SourceLayout.format(old.joinToString("\n")).split("\n")
+        if (old == new) return
+        val line = lineOfOffset(caretPosition)
+        val col = caretPosition - lineStart(line)
+        compoundEdit {
+            for (l in old.indices.reversed()) if (old[l] != new[l]) replaceRange(lineStart(l), lineEnd(l), new[l])
+        }
+        val shift = SourceLayout.split(new[line]).indent.length - SourceLayout.split(old[line]).indent.length
+        caretPosition = lineStart(line) + (col + shift).coerceIn(0, new[line].length)
     }
 
     private fun changed() {

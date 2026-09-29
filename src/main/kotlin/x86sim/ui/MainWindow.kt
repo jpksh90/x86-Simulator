@@ -361,6 +361,8 @@ class MainWindow : JFrame() {
         add(JMenu("Edit").apply {
             add(item("Undo", KeyEvent.VK_Z) { if (editor.undo.canUndo()) editor.undo.undo() })
             add(item("Redo", KeyEvent.VK_Z, InputEvent.SHIFT_DOWN_MASK) { if (editor.undo.canRedo()) editor.undo.redo() })
+            addSeparator()
+            add(item("Format Program", KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK) { editor.formatProgram() })
         })
         add(JMenu("Run").apply {
             for (a in listOf(assembleAction, runAction, pauseAction, stepAction, stepBackAction, stepOverAction, stepOutAction, resetAction))

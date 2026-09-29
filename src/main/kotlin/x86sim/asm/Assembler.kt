@@ -245,18 +245,13 @@ class Assembler {
     private class AsmFail(message: String) : Exception(message)
 
     private fun stripComment(line: String): String {
-        var quote: Char? = null
-        for ((i, c) in line.withIndex()) {
-            if (quote != null) { if (c == quote) quote = null }
-            else if (c == '\'' || c == '"' || c == '`') quote = c
-            else if (c == ';') return line.substring(0, i)
-        }
-        return line
+        val i = commentStart(line)
+        return if (i < 0) line else line.substring(0, i)
     }
 
     /** Index of the colon ending a leading label, or -1. */
     private fun labelColon(line: String): Int {
-        val m = Regex("^\\s*([A-Za-z_.?@\$][\\w.?@\$#]*)\\s*:").find(line) ?: return -1
+        val m = LABEL_RE.find(line) ?: return -1
         return m.range.last
     }
 
@@ -573,5 +568,19 @@ class Assembler {
             DATA_DIRECTIVES.keys
 
         fun assemble(source: String) = Assembler().assemble(source)
+
+        /** A leading `name:` label, as the assembler recognises it. */
+        internal val LABEL_RE = Regex("^\\s*([A-Za-z_.?@\$][\\w.?@\$#]*)\\s*:")
+
+        /** Index of the first `;` outside a '…', "…" or `…` literal, or -1. */
+        internal fun commentStart(line: String): Int {
+            var quote: Char? = null
+            for ((i, c) in line.withIndex()) {
+                if (quote != null) { if (c == quote) quote = null }
+                else if (c == '\'' || c == '"' || c == '`') quote = c
+                else if (c == ';') return i
+            }
+            return -1
+        }
     }
 }
